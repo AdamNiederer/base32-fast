@@ -40,25 +40,20 @@ fn b32enc_avx512<'a>(src: &'a [u8], dst: &'a mut [u8]) -> &'a [u8] {
             let s = _mm512_loadu_si512(src.as_ptr().add(src_cur) as *const i32);
             let p = _mm512_permutexvar_epi8(__m512i::from(shuf), s);
             let multishift = _mm512_set_epi8(
-                59, 54, 49, 44, 39, 34, 29, 24,
-                59, 54, 49, 44, 39, 34, 29, 24,
-                59, 54, 49, 44, 39, 34, 29, 24,
-                59, 54, 49, 44, 39, 34, 29, 24,
-                59, 54, 49, 44, 39, 34, 29, 24,
-                59, 54, 49, 44, 39, 34, 29, 24,
-                59, 54, 49, 44, 39, 34, 29, 24,
-                59, 54, 49, 44, 39, 34, 29, 24,
+                24, 29, 34, 39, 44, 49, 54, 59,
+                24, 29, 34, 39, 44, 49, 54, 59,
+                24, 29, 34, 39, 44, 49, 54, 59,
+                24, 29, 34, 39, 44, 49, 54, 59,
+                24, 29, 34, 39, 44, 49, 54, 59,
+                24, 29, 34, 39, 44, 49, 54, 59,
+                24, 29, 34, 39, 44, 49, 54, 59,
+                24, 29, 34, 39, 44, 49, 54, 59,
             );
             let d = _mm512_multishift_epi64_epi8(multishift, p);
             let d = _mm512_and_si512(d, _mm512_set1_epi8(0x1F));
-            // eprintln!("{:#066b}", Simd::<u64, 8>::from(d)[0]);
-            let db = _mm512_permutexvar_epi8(__m512i::from(endian64), d);
-            let m1 = _mm512_cmplt_epi8_mask(db, _mm512_set1_epi8(10));
-            //let s1 = _mm512_mask_set1_epi8(_mm512_setzero_si512(), m1, i8::MIN);
-            let res = _mm512_or_si512(
-                _mm512_maskz_add_epi8(m1, db, _mm512_set1_epi8('0' as i8)),
-                _mm512_maskz_add_epi8(!m1, db, _mm512_set1_epi8('a' as i8 - 10)),
-            );
+            let m = _mm512_cmpge_epi8_mask(d, _mm512_set1_epi8(10));
+            let a = _mm512_mask_blend_epi8(m, _mm512_set1_epi8('0' as i8), _mm512_set1_epi8('a' as i8 - 10));
+            let res = _mm512_add_epi8(d, a);
             
             _mm512_storeu_si512(dst.as_ptr().add(dst_cur) as *mut __m512i, res);
         }
@@ -133,11 +128,9 @@ fn b32dec_avx512<'a>(src: &'a [u8], dst: &'a mut [u8]) {
     while src.len() - src_cur >= 64 {
         unsafe {
             let s = _mm512_loadu_si512(src.as_ptr().add(src_cur) as *const i32);
-            let m = _mm512_cmplt_epi8_mask(s, _mm512_set1_epi8('a' as i8));
-            let d = _mm512_or_si512(
-                _mm512_maskz_sub_epi8(m, s, _mm512_set1_epi8('0' as i8)),
-                _mm512_maskz_sub_epi8(!m, s, _mm512_set1_epi8('a' as i8 - 10)),
-            );
+            let m = _mm512_cmpge_epi8_mask(s, _mm512_set1_epi8('a' as i8));
+            let a = _mm512_mask_blend_epi8(m, _mm512_set1_epi8('0' as i8), _mm512_set1_epi8('a' as i8 - 10));
+            let d = _mm512_sub_epi8(s, a);
             // -> 000eeeee 000ddeee 000ddddd 000ccccd 000bcccc 000bbbbb 000aaabb 000aaaaa
            
             let shifts8 = _mm512_set_epi8(
