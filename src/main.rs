@@ -54,7 +54,6 @@ fn b32enc_avx512<'a>(src: &'a [u8], dst: &'a mut [u8]) -> &'a [u8] {
             let m = _mm512_cmpge_epi8_mask(d, _mm512_set1_epi8(10));
             let a = _mm512_mask_blend_epi8(m, _mm512_set1_epi8('0' as i8), _mm512_set1_epi8('a' as i8 - 10));
             let res = _mm512_add_epi8(d, a);
-            
             _mm512_storeu_si512(dst.as_ptr().add(dst_cur) as *mut __m512i, res);
         }
         src_cur += 40;
@@ -160,14 +159,14 @@ fn b32dec_avx512<'a>(src: &'a [u8], dst: &'a mut [u8]) {
 
             let s32 = _mm512_madd_epi16(s16, shifts16); // w1 | w2 << 10
             // -> 000000000000ccccddddddddeeeeeeee 000000000000aaaaaaaabbbbbbbbcccc
-            let s32s = _mm512_shuffle_epi32(s32, 0b10_11_00_01);
+            let s32_shuffled = _mm512_shuffle_epi32(s32, 0b10_11_00_01);
             // -> 000000000000aaaaaaaabbbbbbbbcccc 000000000000ccccddddddddeeeeeeee
-            let s32ss = _mm512_srl_epi64(s32s, _mm_set1_epi64x(12));
+            let s32_shifted = _mm512_srl_epi64(s32_shuffled, _mm_set1_epi64x(12));
             // -> 000000000000000000000000aaaaaaaa bbbbbbbbcccc000000000000ccccdddd
             
             let mask = _mm512_set1_epi64(0b0000000000001111111111111111111111111111111100000000000000000000);
             // select bits from s32s if mask = 1, else s32ss
-            let blitted = _mm512_ternarylogic_epi64(mask, s32ss, s32s, 0xca); 
+            let blitted = _mm512_ternarylogic_epi64(mask, s32_shifted, s32_shuffled, 0xca);
             
             let perm = _mm512_set_epi8( // byteswap 40 bytes, then 20 zeroes
                 0, 0, 0, 0, 0,
@@ -186,9 +185,6 @@ fn b32dec_avx512<'a>(src: &'a [u8], dst: &'a mut [u8]) {
             );        
 
             let res = _mm512_maskz_permutexvar_epi8(0x000000FFFFFFFFFF, __m512i::from(perm), blitted);
-            // eprintln!("{:?}", Simd::<u8, 64>::from(res));
-            // eprint!("{:?} ", dst_cur);
-
             _mm512_mask_storeu_epi8(dst.as_ptr().add(dst_cur) as *mut i8, 0x000000FFFFFFFFFF, res)
         }
         src_cur += 64;
@@ -198,7 +194,7 @@ fn b32dec_avx512<'a>(src: &'a [u8], dst: &'a mut [u8]) {
 
 fn b32dec<'a>(src: &'a [u8], dst: &'a mut [u8]) {
     if src.len() >= 64 {
-        b32dec_avx512(src, dst);        
+        b32dec_avx512(src, dst);
     }
 
     let src_tail = src.len() - src.len() % 64;
@@ -299,8 +295,8 @@ fn main() {
     let mut writer = BufWriter::new(io::stdout());
 
     if args.decode {
-        let mut write_buf = [0u8; 10000];
-        let mut read_buf = [0u8; 16000];
+        let mut write_buf = [0u8; 100000];
+        let mut read_buf = [0u8; 160000];
         let mut residual = 0;
         let mut residual_buf = [0; 8];
 
@@ -327,8 +323,8 @@ fn main() {
         }
         writer.flush().expect("Write error");
     } else { 
-        let mut write_buf = [0u8; 16000];
-        let mut read_buf = [0u8; 10000];
+        let mut write_buf = [0u8; 160000];
+        let mut read_buf = [0u8; 100000];
         let mut residual = 0;
         let mut residual_buf = [0; 5];
         while let Ok(num_read) = reader.read(&mut read_buf[residual..]) {
