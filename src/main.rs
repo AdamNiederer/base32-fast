@@ -31,6 +31,52 @@ const endian64: Simd<u8, 64> = Simd::from_array([
 ]);        
 
 #[inline(always)]
+fn to_char(value: u8) -> u8 {
+    let split_val = 'a' as u8 - '0' as u8 - 10; // 97 - 48 - 10 = 39
+    let split = split_val * ((value >= 10) as u8);
+    value + 48 + split
+}
+
+fn b32enc(src: &[u8], dst: &mut [u8]) {
+    let src_len = src.len();
+    let dst_len = dst.len();
+
+    if dst_len < ((src_len + 4) / 5) * 8 {
+        panic!("destination buffer too small");
+    }
+
+    let avx_src_len = (src_len / 40) * 40;
+    let avx_dst_len = (avx_src_len / 40) * 64;
+    if avx_src_len > 0 {
+         b32enc_avx512(&src[..avx_src_len], &mut dst[..avx_dst_len]);
+    }
+
+    let rem_src = &src[avx_src_len..];
+    let rem_dst = &mut dst[avx_dst_len..];
+    let mut rem_dst_cur = 0;
+    for src_chunk in rem_src.chunks(5) {
+        let dst_chunk = &mut rem_dst[rem_dst_cur..];
+        let mut padded_chunk = [0u8; 5];
+        padded_chunk[..src_chunk.len()].copy_from_slice(src_chunk);
+
+        dst_chunk[0] = to_char((padded_chunk[0] & 0xf8) >> 3);
+        dst_chunk[1] = to_char(((padded_chunk[0] & 0x07) << 2) | ((padded_chunk[1] & 0xC0) >> 6));
+        dst_chunk[2] = to_char((padded_chunk[1] & 0x3E) >> 1);
+        dst_chunk[3] = to_char(((padded_chunk[1] & 0x01) << 4) | ((padded_chunk[2] & 0xF0) >> 4));
+        dst_chunk[4] = to_char(((padded_chunk[2] & 0x0F) << 1) | (padded_chunk[3] >> 7));
+        dst_chunk[5] = to_char((padded_chunk[3] & 0x7C) >> 2);
+        dst_chunk[6] = to_char(((padded_chunk[3] & 0x03) << 3) | ((padded_chunk[4] & 0xE0) >> 5));
+        dst_chunk[7] = to_char(padded_chunk[4] & 0x1F);
+
+        let dst_len = (src_chunk.len() * 8 + 4) / 5; // ceil(src_chunk.len() * 8 / 5)
+        for i in dst_len..8 {
+            dst_chunk[i] = b'=';
+        }
+
+        rem_dst_cur += 8;
+    }
+}
+
 fn b32enc_avx512<'a>(src: &'a [u8], dst: &'a mut [u8]) -> &'a [u8] {
     use core::arch::x86_64::*;
     let mut src_cur = 0;
@@ -52,7 +98,7 @@ fn b32enc_avx512<'a>(src: &'a [u8], dst: &'a mut [u8]) -> &'a [u8] {
             let d = _mm512_multishift_epi64_epi8(multishift, p);
             let d = _mm512_and_si512(d, _mm512_set1_epi8(0x1F));
             let m = _mm512_cmpge_epi8_mask(d, _mm512_set1_epi8(10));
-            let a = _mm512_mask_blend_epi8(m, _mm512_set1_epi8('0' as i8), _mm512_set1_epi8('a' as i8 - 10));
+            let a = _mm512_mask_blend_epi8(m, _mm512_set1_epi8('0' as i8), _mm512_set1_epi8('A' as i8 - 10));
             let res = _mm512_add_epi8(d, a);
             _mm512_storeu_si512(dst.as_ptr().add(dst_cur) as *mut __m512i, res);
         }
@@ -83,7 +129,7 @@ fn b32enc_simd<'a>(src: &'a [u8], dst: &'a mut [u8]) -> &'a [u8] {
         let m1 = db.simd_lt(Simd::splat(10));
         let s1 = unsafe { transmute::<_, Simd<u8, 64>>(m1.to_int()) };
         let res = (s1 & (db + Simd::splat('0' as u8)))
-            | (!s1 & (db + Simd::splat('a' as u8 - 10)));
+            | (!s1 & (db + Simd::splat('A' as u8 - 10)));
 
         unsafe { 
             transmute::<_, *mut Simd<u8, 64>>(dst.as_ptr().add(dst_cur)).write_unaligned(res);
@@ -95,31 +141,6 @@ fn b32enc_simd<'a>(src: &'a [u8], dst: &'a mut [u8]) -> &'a [u8] {
     return dst;
 }
 
-fn b32enc<'a>(src: &'a [u8], dst: &'a mut [u8]) {
-    if src.len() >= 40 {
-        b32enc_avx512(src, dst);        
-    }
-
-    let src_tail = src.len() - src.len() % 40;
-    let dst_tail = dst.len() - dst.len() % 64;
-    let residual = src.len() - src.len() % 5;
-    for (i, chunk) in src[src_tail..residual].chunks_exact(5).enumerate() {
-        dst[dst_tail + i * 8] = (chunk[0] & 0xf8) >> 3;
-        dst[dst_tail + i * 8 + 1] = ((chunk[0] & 0x07) << 2) | ((chunk[1] & 0xC0) >> 6);
-        dst[dst_tail + i * 8 + 2] = (chunk[1] & 0x3E) >> 1;
-        dst[dst_tail + i * 8 + 3] = ((chunk[1] & 0x01) << 4) | ((chunk[2] & 0xF0) >> 4);
-        dst[dst_tail + i * 8 + 4] = ((chunk[2] & 0x0F) << 1) | (chunk[3] >> 7);
-        dst[dst_tail + i * 8 + 5] = (chunk[3] & 0x7C) >> 2;
-        dst[dst_tail + i * 8 + 6] = ((chunk[3] & 0x03) << 3) | ((chunk[4] & 0xE0) >> 5);
-        dst[dst_tail + i * 8 + 7] = chunk[4] & 0x1F;
-
-        for j in 0..8 {
-            let split = ('a' as u8 - '0' as u8 - 10) * ((dst[dst_tail + i * 8 + j] >= 10) as u8);
-            dst[dst_tail + i * 8 + j] += 48 + split;
-        }
-    }
-}
-
 fn b32dec_avx512<'a>(src: &'a [u8], dst: &'a mut [u8]) {
     use core::arch::x86_64::*;
     let mut src_cur = 0;
@@ -127,8 +148,8 @@ fn b32dec_avx512<'a>(src: &'a [u8], dst: &'a mut [u8]) {
     while src.len() - src_cur >= 64 {
         unsafe {
             let s = _mm512_loadu_si512(src.as_ptr().add(src_cur) as *const i32);
-            let m = _mm512_cmpge_epi8_mask(s, _mm512_set1_epi8('a' as i8));
-            let a = _mm512_mask_blend_epi8(m, _mm512_set1_epi8('0' as i8), _mm512_set1_epi8('a' as i8 - 10));
+            let m = _mm512_cmpge_epi8_mask(s, _mm512_set1_epi8('A' as i8));
+            let a = _mm512_mask_blend_epi8(m, _mm512_set1_epi8('0' as i8), _mm512_set1_epi8('A' as i8 - 10));
             let d = _mm512_sub_epi8(s, a);
             // -> 000eeeee 000ddeee 000ddddd 000ccccd 000bcccc 000bbbbb 000aaabb 000aaaaa
            
@@ -200,18 +221,18 @@ fn b32dec<'a>(src: &'a [u8], dst: &'a mut [u8]) {
     let src_tail = src.len() - src.len() % 64;
     let dst_tail = dst.len() - dst.len() % 40;
     for (i, chunk) in src[src_tail..].chunks_exact(8).enumerate() {
-        let split0 = ('a' as u8 - '0' as u8 - 10) * ((dst[dst_tail + i * 5 + 0] >= 'a' as u8) as u8);
-        let split1 = ('a' as u8 - '0' as u8 - 10) * ((dst[dst_tail + i * 5 + 1] >= 'a' as u8) as u8);
-        let split2 = ('a' as u8 - '0' as u8 - 10) * ((dst[dst_tail + i * 5 + 2] >= 'a' as u8) as u8);
-        let split3 = ('a' as u8 - '0' as u8 - 10) * ((dst[dst_tail + i * 5 + 3] >= 'a' as u8) as u8);
-        let split4 = ('a' as u8 - '0' as u8 - 10) * ((dst[dst_tail + i * 5 + 4] >= 'a' as u8) as u8);
+        let split0 = ('A' as u8 - '0' as u8 - 10) * ((dst[dst_tail + i * 5 + 0] >= 'A' as u8) as u8);
+        let split1 = ('A' as u8 - '0' as u8 - 10) * ((dst[dst_tail + i * 5 + 1] >= 'A' as u8) as u8);
+        let split2 = ('A' as u8 - '0' as u8 - 10) * ((dst[dst_tail + i * 5 + 2] >= 'A' as u8) as u8);
+        let split3 = ('A' as u8 - '0' as u8 - 10) * ((dst[dst_tail + i * 5 + 3] >= 'A' as u8) as u8);
+        let split4 = ('A' as u8 - '0' as u8 - 10) * ((dst[dst_tail + i * 5 + 4] >= 'A' as u8) as u8);
 
         dst[dst_tail + 5 * i + 0] = ((chunk[0] << 3) | (chunk[1] >> 2)) - (48 + split0);
         dst[dst_tail + 5 * i + 1] = ((chunk[1] << 6) | (chunk[2] << 1) | (chunk[3] >> 4)) - (48 + split1);
         dst[dst_tail + 5 * i + 2] = (chunk[3] << 4) | (chunk[4] >> 1) - (48 + split2);
         dst[dst_tail + 5 * i + 3] = ((chunk[4] << 7) | (chunk[5] << 2) | (chunk[6] >> 3)) - (48 + split3);
         dst[dst_tail + 5 * i + 4] = ((chunk[6] << 5) | chunk[7]) - (48 + split4);
-}
+    }
 }
 
 
@@ -297,22 +318,12 @@ fn main() {
     if args.decode {
         let mut write_buf = [0u8; 100000];
         let mut read_buf = [0u8; 160000];
-        let mut residual = 0;
-        let mut residual_buf = [0; 8];
-
-        while let Ok(num_read) = reader.read(&mut read_buf[residual..]) {
+        while let Ok(num_read) = reader.read(&mut read_buf) {
             if num_read == 0 {
                 break; // finalize
             }
-            let len = residual + num_read;
-            let tail = len / 8 * 8;
-            let expected_out = tail / 8 * 5;
-            residual = len - tail;
-
-            b32dec(&read_buf[..tail], &mut write_buf[..expected_out]);
-            residual_buf[..residual].copy_from_slice(&read_buf[tail..len]);
-            read_buf[..residual].copy_from_slice(&residual_buf[..residual]);
-
+            let expected_out = num_read / 8 * 5;
+            b32dec(&read_buf[..num_read], &mut write_buf[..expected_out]);
             match writer.write_all(&mut write_buf[..expected_out]) {
                 Ok(_) => (),
                 _ => {
@@ -325,20 +336,12 @@ fn main() {
     } else { 
         let mut write_buf = [0u8; 160000];
         let mut read_buf = [0u8; 100000];
-        let mut residual = 0;
-        let mut residual_buf = [0; 5];
-        while let Ok(num_read) = reader.read(&mut read_buf[residual..]) {
+        while let Ok(num_read) = reader.read(&mut read_buf) {
             if num_read == 0 {
                 break; // finalize
             }
-
-            let len = residual + num_read;
-            let tail = len / 5 * 5;
-            let expected_out = tail / 5 * 8;
-            residual = len - tail;
-            b32enc(&read_buf[..tail], &mut write_buf[..expected_out]);
-            residual_buf[..residual].copy_from_slice(&read_buf[tail..len]);
-            read_buf[..residual].copy_from_slice(&residual_buf[..residual]);
+            let expected_out = (num_read + 4) / 5 * 8;
+            b32enc(&read_buf[..num_read], &mut write_buf[..expected_out]);
             match writer.write_all(&mut write_buf[..expected_out]) {
                 Ok(_) => (),
                 _ => {
