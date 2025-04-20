@@ -1,7 +1,7 @@
 use std::arch::x86_64::*;
 use std::mem::transmute;
-use std::simd::{Simd, Mask};
-use std::simd::cmp::{SimdPartialOrd, SimdPartialEq};
+use std::simd::{Simd};
+use std::simd::cmp::{SimdPartialOrd};
 
 use crate::{Rfc4648, Rfc4648Hex, Crockford, Geohash, Z, RFC4648_CHARS, RFC4648HEX_CHARS, CROCKFORD_CHARS, GEOHASH_CHARS, Z_CHARS};
 
@@ -191,7 +191,7 @@ unsafe fn from_char_simd<const A: u8>(src: Simd<u8, 64>) -> Simd<u8, 64> {
             let v_all = mask_27.select(v_09, b_lc_az);
             v_all
         }
-         Crockford => {
+        Crockford => {
             let lut_0_63 = transmute::<_, *const Simd<u8, 64>>(CROCKFORD_LUT.as_ptr().add(0)).read_unaligned();
             let lut_64_127 = transmute::<_, *const Simd<u8, 64>>(CROCKFORD_LUT.as_ptr().add(64)).read_unaligned();
             let lut_128_191 = transmute::<_, *const Simd<u8, 64>>(CROCKFORD_LUT.as_ptr().add(128)).read_unaligned();
@@ -216,7 +216,7 @@ unsafe fn from_char_simd<const A: u8>(src: Simd<u8, 64>) -> Simd<u8, 64> {
             let b_128_191 = mask_128_191.select(v_128_191, b_64_127);
             mask_192_256.select(v_192_255, b_128_191)
         }
-         Geohash => {
+        Geohash => {
             let lut_0_63 = transmute::<_, *const Simd<u8, 64>>(GEOHASH_LUT.as_ptr().add(0)).read_unaligned();
             let lut_64_127 = transmute::<_, *const Simd<u8, 64>>(GEOHASH_LUT.as_ptr().add(64)).read_unaligned();
             let lut_128_191 = transmute::<_, *const Simd<u8, 64>>(GEOHASH_LUT.as_ptr().add(128)).read_unaligned();
@@ -240,7 +240,7 @@ unsafe fn from_char_simd<const A: u8>(src: Simd<u8, 64>) -> Simd<u8, 64> {
             let b_64_127 = mask_64_127.select(v_64_127, b_0_63);
             let b_128_191 = mask_128_191.select(v_128_191, b_64_127);
             mask_192_256.select(v_192_255, b_128_191)
-         }
+        }
         Z => {
             let lut_0_63 = transmute::<_, *const Simd<u8, 64>>(Z_LUT.as_ptr().add(0)).read_unaligned();
             let lut_64_127 = transmute::<_, *const Simd<u8, 64>>(Z_LUT.as_ptr().add(64)).read_unaligned();
@@ -390,7 +390,7 @@ mod tests {
 
         for (i, chr) in alphabet.iter().enumerate() {
             if lower == chr.to_ascii_lowercase() || upper == chr.to_ascii_uppercase() {
-                 return i as u8;
+                return i as u8;
             }
         }
 
@@ -403,8 +403,8 @@ mod tests {
         for value in 0..=255u8 {
             let expected = expected_from_char(value, RFC4648_CHARS);
             unsafe {
-                 let actual = from_char::<Rfc4648>(value);
-                 assert_eq!(actual, expected, "Rfc4648 from_char mismatch for value {} ({})", value, value as char);
+                let actual = from_char::<Rfc4648>(value);
+                assert_eq!(actual, expected, "Rfc4648 from_char mismatch for value {} ({})", value, value as char);
             }
         }
     }
@@ -413,10 +413,10 @@ mod tests {
     fn test_from_char_scalar_rfc4648hex() {
         for value in 0..=255u8 {
             let expected = expected_from_char(value, RFC4648HEX_CHARS);
-             unsafe {
+            unsafe {
                 let actual = from_char::<Rfc4648Hex>(value);
                 assert_eq!(actual, expected, "Rfc4648Hex from_char mismatch for value {} ({})", value, value as char);
-             }
+            }
         }
     }
 
@@ -424,32 +424,32 @@ mod tests {
     fn test_from_char_scalar_crockford() {
         for value in 0..=255u8 {
             let expected = expected_from_char(value, CROCKFORD_CHARS);
-             unsafe {
+            unsafe {
                 let actual = from_char::<Crockford>(value);
                 assert_eq!(actual, expected, "Crockford from_char mismatch for value {} ({})", value, value as char);
-             }
+            }
         }
     }
 
-     #[test]
+    #[test]
     fn test_from_char_scalar_geohash() {
         for value in 0..=255u8 {
             let expected = expected_from_char(value, GEOHASH_CHARS);
-             unsafe {
+            unsafe {
                 let actual = from_char::<Geohash>(value);
                 assert_eq!(actual, expected, "Geohash from_char mismatch for value {} ({})", value, value as char);
-             }
+            }
         }
     }
 
-     #[test]
+    #[test]
     fn test_from_char_scalar_z() {
         for value in 0..=255u8 {
             let expected = expected_from_char(value, Z_CHARS);
-             unsafe {
+            unsafe {
                 let actual = from_char::<Z>(value);
                 assert_eq!(actual, expected, "Z from_char mismatch for value {} ({})", value, value as char);
-             }
+            }
         }
     }
 
@@ -523,12 +523,12 @@ mod tests {
     #[test]
     fn test_from_char_avx512_z() {
         unsafe { 
-        let src_reg = _mm512_loadu_si512(FROM_CHAR_INPUT.as_ptr() as *const _);
-        let result_reg = from_char_avx512::<Z>(src_reg);
-        let mut actual_output_bytes = [0u8; 64];
-        _mm512_storeu_si512(actual_output_bytes.as_mut_ptr() as *mut _, result_reg);
+            let src_reg = _mm512_loadu_si512(FROM_CHAR_INPUT.as_ptr() as *const _);
+            let result_reg = from_char_avx512::<Z>(src_reg);
+            let mut actual_output_bytes = [0u8; 64];
+            _mm512_storeu_si512(actual_output_bytes.as_mut_ptr() as *mut _, result_reg);
 
-        let expected_output_bytes = generate_expected_from_char_output(&FROM_CHAR_INPUT, Z_CHARS);
+            let expected_output_bytes = generate_expected_from_char_output(&FROM_CHAR_INPUT, Z_CHARS);
             assert_eq!(&actual_output_bytes[..], &expected_output_bytes[..], "AVX-512 Z from_char mismatch");
         }
     }
