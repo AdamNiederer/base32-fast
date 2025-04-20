@@ -109,10 +109,7 @@ unsafe fn to_char_simd<const A: u8>(src: Simd<u8, 64>) -> Simd<u8, 64> {
 }
 
 pub fn b32enc(src: &[u8], dst: &mut [u8], alphabet: u8) {
-    let src_len = src.len();
-    let dst_len = dst.len();
-
-    if dst_len < ((src_len + 4) / 5) * 8 {
+    if dst.len() < ((src.len() + 4) / 5) * 8 {
         panic!("destination buffer too small");
     }
 
