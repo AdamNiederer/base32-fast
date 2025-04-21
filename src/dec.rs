@@ -36,7 +36,7 @@ unsafe fn from_char<const A: u8>(value: u8) -> u8 {
     }
 }
 
-#[inline(never)]
+#[inline(always)]
 unsafe fn from_char_avx512<const A: u8>(src: __m512i) -> __m512i {
     let lut = match A {
         Rfc4648 => RFC4648_LUT,
@@ -164,8 +164,7 @@ pub fn b32dec(src: & [u8], dst: & mut [u8], alphabet: u8) {
     };
 }
 
-#[no_mangle]
-#[inline(never)]
+#[inline(always)]
 pub unsafe fn padcount_avx512(src: &[u8]) -> usize {
     debug_assert_eq!(src.len(), 8);
     _popcnt32(_mm_cmpeq_epi8_mask(
@@ -174,8 +173,7 @@ pub unsafe fn padcount_avx512(src: &[u8]) -> usize {
     ) as i32) as usize
 }
 
-#[no_mangle]
-#[inline(never)]
+#[inline(always)]
 pub fn padcount(src: &[u8]) -> usize {
     debug_assert_eq!(src.len(), 8, "Input slice must be exactly 8 bytes long");
     let mut count = 0;
@@ -579,5 +577,4 @@ mod tests {
             black_box(b32dec(black_box(input), black_box(&mut output), Z))
         });
     }
-
 }

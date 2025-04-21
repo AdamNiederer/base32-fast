@@ -8,6 +8,20 @@ use super::{
     RFC4648_CHARS, RFC4648HEX_CHARS, CROCKFORD_CHARS, GEOHASH_CHARS, Z_CHARS
 };
 
+static RFC4648_LUT: [u8; 64] = [
+    b'A', b'B', b'C', b'D', b'E', b'F', b'G', b'H', b'I', b'J', b'K', b'L', b'M', b'N', b'O', b'P',
+    b'Q', b'R', b'S', b'T', b'U', b'V', b'W', b'X', b'Y', b'Z', b'2', b'3', b'4', b'5', b'6', b'7',
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+];
+
+static RFC4648HEX_LUT: [u8; 64] = [
+    b'0', b'1', b'2', b'3', b'4', b'5', b'6', b'7', b'8', b'9', b'A', b'B', b'C', b'D', b'E', b'F',
+    b'G', b'H', b'I', b'J', b'K', b'L', b'M', b'N', b'O', b'P', b'Q', b'R', b'S', b'T', b'U', b'V',
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+];
+
 static CROCKFORD_LUT: [u8; 64] = [
     b'0', b'1', b'2', b'3', b'4', b'5', b'6', b'7', b'8', b'9', b'A', b'B', b'C', b'D', b'E', b'F',
     b'G', b'H', b'J', b'K', b'M', b'N', b'P', b'Q', b'R', b'S', b'T', b'V', b'W', b'X', b'Y', b'Z',
@@ -42,37 +56,17 @@ unsafe fn to_char<const A: u8>(value: u8) -> u8 {
 }
 
 unsafe fn to_char_avx512<const A: u8>(src: __m512i) -> __m512i {
-    match A {
-        Rfc4648 => {
-            let mask = _mm512_cmpge_epi8_mask(src, _mm512_set1_epi8(26));
-            let off_a = _mm512_set1_epi8(b'A' as i8);
-            let off_2 = _mm512_set1_epi8(b'2' as i8 - 26);
-            let off = _mm512_mask_blend_epi8(mask, off_a, off_2);
-            let res = _mm512_add_epi8(src, off);
-            res
-        },
-        Rfc4648Hex => {
-            let mask = _mm512_cmpge_epi8_mask(src, _mm512_set1_epi8(10));
-            let off_0 = _mm512_set1_epi8('0' as i8);
-            let off_a = _mm512_set1_epi8('A' as i8 - 10);
-            let off = _mm512_mask_blend_epi8(mask, off_0, off_a);
-            let res = _mm512_add_epi8(src, off);
-            res
-        },
-        Crockford => {
-            let lut_reg = _mm512_loadu_si512(CROCKFORD_LUT.as_ptr() as *const _);
-            _mm512_permutexvar_epi8(src, lut_reg)
-        },
-        Geohash => {
-            let lut_reg = _mm512_loadu_si512(GEOHASH_LUT.as_ptr() as *const _);
-            _mm512_permutexvar_epi8(src, lut_reg)
-        },
-        Z => {
-            let lut_reg = _mm512_loadu_si512(Z_LUT.as_ptr() as *const _);
-            _mm512_permutexvar_epi8(src, lut_reg)
-        },
-        _ => core::hint::unreachable_unchecked(),        
-    }
+    let lut = match A {
+        Rfc4648 => RFC4648_LUT,
+        Rfc4648Hex => RFC4648HEX_LUT,
+        Crockford => CROCKFORD_LUT,
+        Geohash => GEOHASH_LUT,
+        Z => Z_LUT,
+        _ => core::hint::unreachable_unchecked(), 
+    };
+    
+    let lut_reg = _mm512_loadu_si512(lut.as_ptr() as *const _);
+    _mm512_permutexvar_epi8(src, lut_reg)
 }
 
 #[inline(always)]
@@ -245,9 +239,13 @@ unsafe fn b32enc_simd<'a, const A: u8>(src: &'a [u8], dst: &'a mut [u8]) -> &'a 
     return dst;
 }
 
+#[cfg(test)] extern crate test;
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use test::bench::Bencher;
+    use std::hint::black_box;
     use base32::encode;
     use base32::Alphabet;
 
@@ -571,5 +569,34 @@ mod tests {
                 assert_eq!(actual, expected, "Z mismatch for value {}", value);
             }
         }
+    }
+
+    #[bench]
+    fn bench_to_char_avx512(b: &mut Bencher) {
+        let input = [0; 64];
+        unsafe {
+            let src_reg = _mm512_loadu_si512(input.as_ptr() as *const _);
+            b.iter(|| {
+                black_box(to_char_avx512::<Z>(black_box(src_reg)));
+            });
+        }
+    }
+    
+    #[bench]
+    fn bench_b32enc_avx512(b: &mut Bencher) {
+        let input = [0; 40];
+        let mut output = [0u8; 64];
+        b.iter(|| {
+            black_box(b32enc(black_box(&input), black_box(&mut output), Z))
+        });
+    }
+
+    #[bench]
+    fn bench_b32enc(b: &mut Bencher) {
+        let input = [0; 35];
+        let mut output = [0u8; 56];
+        b.iter(|| {
+            black_box(b32enc(black_box(&input), black_box(&mut output), Z))
+        });
     }
 }
