@@ -26,6 +26,10 @@ struct Args {
     /// The alphabet to use (rfc4648, rfc4648hex, crockford, geohash, or z; default rfc4648)
     #[arg(long)]
     alphabet: Option<String>,
+
+    /// Whether to not output a newline after the encoded or decoded text
+    #[arg(short)]
+    no_newline: bool,
 }
 
 fn main() {
@@ -92,6 +96,11 @@ fn main() {
                 }
             }
         }
+        writer.flush().expect("Write error");
+    }
+
+    if !args.no_newline {
+        writer.write(&[b'\n']).expect("Write error");
         writer.flush().expect("Write error");
     }
 }

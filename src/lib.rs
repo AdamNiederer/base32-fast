@@ -1,6 +1,9 @@
+#![cfg_attr(test, feature(test))]
+
 #![feature(portable_simd)]
 #![feature(stdarch_x86_avx512)]
 #![allow(non_upper_case_globals)]
+#![allow(dead_code)]
 
 pub const Rfc4648: u8 = 0;
 pub const Rfc4648Hex: u8 = 1;
