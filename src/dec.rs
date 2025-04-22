@@ -79,6 +79,29 @@ unsafe fn from_char_simd<const A: u8>(src: Simd<u8, 64>) -> Simd<u8, 64> {
     mask_ge_64.select(v_64_127, v_0_63)
 }
 
+#[inline(always)]
+pub unsafe fn padcount_avx512(src: &[u8]) -> usize {
+    debug_assert_eq!(src.len(), 8);
+    _popcnt32(_mm_cmpeq_epi8_mask(
+        _mm_loadl_epi64(src.as_ptr() as *const _),
+        _mm_set1_epi8(b'=' as i8),
+    ) as i32) as usize
+}
+
+#[inline(always)]
+pub fn padcount(src: &[u8]) -> usize {
+    debug_assert_eq!(src.len(), 8, "Input slice must be exactly 8 bytes long");
+    let mut count = 0;
+    for i in (0..8).rev() {
+        if src[i] == b'=' {
+            count += 1;
+        } else {
+            break;
+        }
+    }
+    count
+}
+
 unsafe fn b32dec_avx512<'a, const A: u8>(src: &'a [u8], dst: &'a mut [u8]) {
     let mut src_cur = 0;
     let mut dst_cur = 0;
@@ -147,7 +170,11 @@ unsafe fn b32dec_avx512<'a, const A: u8>(src: &'a [u8], dst: &'a mut [u8]) {
     }
 }
 
-pub fn b32dec(src: & [u8], dst: & mut [u8], alphabet: u8) {
+pub fn b32dec<'a>(src: &'a [u8], dst: &'a mut [u8], alphabet: u8) -> &'a [u8] {
+    if src.len() == 0 {
+        return &dst[0..0];
+    }
+
     if dst.len() < ((src.len() + 3) / 8) * 5 {
         panic!("destination buffer too small");
     }
@@ -161,33 +188,10 @@ pub fn b32dec(src: & [u8], dst: & mut [u8], alphabet: u8) {
             Z => b32dec_generic::<Z>(src, dst),
             _ => panic!("invalid alphabet selected"),
         }
-    };
-}
-
-#[inline(always)]
-pub unsafe fn padcount_avx512(src: &[u8]) -> usize {
-    debug_assert_eq!(src.len(), 8);
-    _popcnt32(_mm_cmpeq_epi8_mask(
-        _mm_loadl_epi64(src.as_ptr() as *const _),
-        _mm_set1_epi8(b'=' as i8),
-    ) as i32) as usize
-}
-
-#[inline(always)]
-pub fn padcount(src: &[u8]) -> usize {
-    debug_assert_eq!(src.len(), 8, "Input slice must be exactly 8 bytes long");
-    let mut count = 0;
-    for i in (0..8).rev() {
-        if src[i] == b'=' {
-            count += 1;
-        } else {
-            break;
-        }
     }
-    count
 }
 
-pub unsafe fn b32dec_generic<'a, const A: u8>(src: &'a [u8], dst: &'a mut [u8]) -> usize {
+pub unsafe fn b32dec_generic<'a, const A: u8>(src: &'a [u8], dst: &'a mut [u8]) -> &'a [u8] {
     if src.len() >= 64 {
         b32dec_avx512::<A>(src, dst);
     }
@@ -195,26 +199,34 @@ pub unsafe fn b32dec_generic<'a, const A: u8>(src: &'a [u8], dst: &'a mut [u8]) 
     let src_tail = src.len() - src.len() % 64;
     let dst_tail = dst.len() - dst.len() % 40;
 
-    let pad_count = padcount_avx512(&src[src.len() - 8..]);
+    let pad_count = if src.len() % 8 == 0 { 
+        padcount_avx512(&src[src.len() - 8..])
+    } else {
+        8 - (src.len() % 8)
+    };
 
-    for (i, chunk) in src[src_tail..].chunks_exact(8).enumerate() {
-        let data0 = from_char::<A>(chunk[0]);
-        let data1 = from_char::<A>(chunk[1]);
-        let data2 = from_char::<A>(chunk[2]);
-        let data3 = from_char::<A>(chunk[3]);
-        let data4 = from_char::<A>(chunk[4]);
-        let data5 = from_char::<A>(chunk[5]);
-        let data6 = from_char::<A>(chunk[6]);
-        let data7 = from_char::<A>(chunk[7]);
+    for (i, src_chunk) in src[src_tail..].chunks(8).enumerate() {
+        let dst_chunk = &mut dst[(dst_tail + 5 * i)..];
+        let mut padded_chunk = [b'='; 8];
+        padded_chunk[..src_chunk.len()].copy_from_slice(src_chunk);
 
-        dst[dst_tail + 5 * i + 0] = (data0 << 3) | (data1 >> 2);
-        dst[dst_tail + 5 * i + 1] = (data1 << 6) | (data2 << 1) | (data3 >> 4);
-        dst[dst_tail + 5 * i + 2] = (data3 << 4) | (data4 >> 1);
-        dst[dst_tail + 5 * i + 3] = (data4 << 7) | (data5 << 2) | (data6 >> 3);
-        dst[dst_tail + 5 * i + 4] = (data6 << 5) | data7;
+        let data0 = from_char::<A>(padded_chunk[0]);
+        let data1 = from_char::<A>(padded_chunk[1]);
+        let data2 = from_char::<A>(padded_chunk[2]);
+        let data3 = from_char::<A>(padded_chunk[3]);
+        let data4 = from_char::<A>(padded_chunk[4]);
+        let data5 = from_char::<A>(padded_chunk[5]);
+        let data6 = from_char::<A>(padded_chunk[6]);
+        let data7 = from_char::<A>(padded_chunk[7]);
+
+        dst_chunk[0] = (data0 << 3) | (data1 >> 2);
+        dst_chunk[1] = (data1 << 6) | (data2 << 1) | (data3 >> 4);
+        dst_chunk[2] = (data3 << 4) | (data4 >> 1);
+        dst_chunk[3] = (data4 << 7) | (data5 << 2) | (data6 >> 3);
+        dst_chunk[4] = (data6 << 5) | data7;
     }
 
-    return dst.len() - ((8 - pad_count * 5) / 8)
+    return &dst[..dst.len() - 5 + (8 - pad_count) * 5 / 8]
 }
 
 #[cfg(test)] extern crate test;
@@ -229,7 +241,7 @@ mod tests {
         if src == b'=' {
             return u8::MIN;
         }
-        
+
         let lower = src.to_ascii_lowercase();
         let upper = src.to_ascii_uppercase();
 
@@ -470,7 +482,7 @@ mod tests {
         assert_eq!(count, 8);
     }
 
-   #[test]
+    #[test]
     fn test_padcount_none() {
         let src: [u8; 8] = *b"ABCDEFGH";
         let count = padcount(&src);
@@ -565,7 +577,7 @@ mod tests {
         let input = b"GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
         let mut output = [0u8; 40];
         b.iter(|| {
-            black_box(b32dec(black_box(input), black_box(&mut output), Z))
+            black_box(b32dec(black_box(input), black_box(&mut output), Z));
         });
     }
 
@@ -574,7 +586,198 @@ mod tests {
         let input = b"GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBV";
         let mut output = [0u8; 35];
         b.iter(|| {
-            black_box(b32dec(black_box(input), black_box(&mut output), Z))
+            black_box(b32dec(black_box(input), black_box(&mut output), Z));
         });
     }
+
+    use base32::{Alphabet, encode, decode};
+
+    #[test]
+    fn test_b32dec_rfc4648_padding_empty() {
+        let input = "".as_bytes();
+        let expected_output = decode(Alphabet::Rfc4648 { padding: true }, "").unwrap();
+        let mut dst = vec![0u8; 5];
+        let dst = b32dec(input, &mut dst, Rfc4648);
+        assert_eq!(dst, expected_output);
+    }
+
+    #[test]
+    fn test_b32dec_rfc4648_padding_full_block() {
+        let input = "ORSXG5DJORUXG5LNORUWYZLSEBFWC2LTN5ZG64DDMNWGC2LPN5ZG64TON5XHIZLE".as_bytes();
+        let expected_output = decode(Alphabet::Rfc4648 { padding: true }, "ORSXG5DJORUXG5LNORUWYZLSEBFWC2LTN5ZG64DDMNWGC2LPN5ZG64TON5XHIZLE").unwrap();
+        let mut dst = vec![0u8; expected_output.len()];
+        b32dec(input, &mut dst, Rfc4648);
+        assert_eq!(dst, expected_output);
+    }
+
+    #[test]
+    fn test_b32dec_rfc4648hex_various_lengths_padding() {
+        let alphabet_crate = Alphabet::Rfc4648Hex { padding: true };
+        let alphabet_u8 = Rfc4648Hex;
+
+        for data_len in 0..=255 {
+            let data: Vec<u8> = (0..data_len).map(|i| i as u8).collect();
+            let encoded = encode(alphabet_crate, &data);
+            let expected = decode(alphabet_crate, &encoded).unwrap();
+            let mut dst = vec![0u8; (expected.len() + 4) / 5 * 5];
+            let dst = b32dec(encoded.as_bytes(), &mut dst, alphabet_u8);
+            assert_eq!(dst, expected, "failed for length: {}", data_len);
+        }
+    }
+
+    #[test]
+    fn test_b32dec_rfc4648_boundary() {
+        let alphabet_crate = Alphabet::Rfc4648 { padding: false };
+        let alphabet_u8 = Rfc4648;
+
+        for data_len in 60..70 { // Test around the 64-byte boundary
+            let data: Vec<u8> = (0..data_len).map(|i| i as u8).collect();
+            let encoded = encode(alphabet_crate, &data);
+            let expected = decode(alphabet_crate, &encoded).unwrap();
+            let mut dst = vec![0u8; (expected.len() + 4) / 5 * 5];
+            let dst = b32dec(encoded.as_bytes(), &mut dst, alphabet_u8);
+            assert_eq!(dst, expected, "failed for length {}", data_len);
+        }
+    }
+
+    #[test]
+    fn test_b32dec_rfc4648_boundary_padding() {
+        let alphabet_crate = Alphabet::Rfc4648 { padding: true };
+        let alphabet_u8 = Rfc4648;
+
+        for data_len in 60..70 { // Test around the 64-byte boundary
+            let data: Vec<u8> = (0..data_len).map(|i| i as u8).collect();
+            let encoded = encode(alphabet_crate, &data);
+            let expected = decode(alphabet_crate, &encoded).unwrap();
+            let mut dst = vec![0u8; (expected.len() + 4) / 5 * 5];
+            let dst = b32dec(encoded.as_bytes(), &mut dst, alphabet_u8);
+            assert_eq!(dst, expected, "failed for length {}", data_len);
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "destination buffer too small")]
+    fn test_b32dec_destination_buffer_too_small() {
+        let data = b"foobar";
+        let encoded = encode(Alphabet::Rfc4648 { padding: true }, data);
+        let mut dst = vec![0u8; 1];
+        b32dec(encoded.as_bytes(), &mut dst, Rfc4648);
+    }
+
+    #[test]
+    #[should_panic(expected = "invalid alphabet selected")]
+    fn test_b32dec_invalid_alphabet() {
+        let data = b"foobar";
+        let encoded = encode(Alphabet::Rfc4648 { padding: true }, data);
+        let mut dst = vec![0u8; 10];
+        b32dec(encoded.as_bytes(), &mut dst, 99);
+    }
+
+    #[test]
+    fn test_b32dec_rfc4648_tail_padding_6() {
+        let input = "AA======";
+        let expected_output = decode(Alphabet::Rfc4648 { padding: true }, input).unwrap();
+        let mut dst = vec![0u8; 5];
+        let dst = b32dec(input.as_bytes(), &mut dst, Rfc4648);
+        assert_eq!(dst, expected_output);
+    }
+
+    #[test]
+    fn test_b32dec_rfc4648_tail_padding_5() {
+        let input = "ABQ=====";
+        let expected_output = decode(Alphabet::Rfc4648 { padding: true }, input).unwrap();
+        let mut dst = vec![0u8; 5];
+        let dst = b32dec(input.as_bytes(), &mut dst, Rfc4648);
+        assert_eq!(dst, expected_output);
+    }
+
+    #[test]
+    fn test_b32dec_rfc4648_tail_padding_4() {
+        let input = "ABQY====";
+        let expected_output = decode(Alphabet::Rfc4648 { padding: true }, input).unwrap();
+        let mut dst = vec![0u8; 5];
+        let dst = b32dec(input.as_bytes(), &mut dst, Rfc4648);
+        assert_eq!(dst, expected_output);
+    }
+
+    #[test]
+    fn test_b32dec_rfc4648_tail_padding_2() {
+        let input = "ABQYIC==";
+        let expected_output = decode(Alphabet::Rfc4648 { padding: true }, input).unwrap();
+        let mut dst = vec![0u8; 5];
+        let dst = b32dec(input.as_bytes(), &mut dst, Rfc4648);
+        assert_eq!(dst, expected_output);
+    }
+
+    #[test]
+    fn test_b32dec_rfc4648_tail_nopadding() {
+        let input = "ABQYICAA";
+        let expected_output = decode(Alphabet::Rfc4648 { padding: true }, input).unwrap();
+        let mut dst = vec![0u8; 5];
+        let dst = b32dec(input.as_bytes(), &mut dst, Rfc4648);
+        assert_eq!(dst, expected_output);
+    }
+
+    #[test]
+    fn test_b32dec_rfc4648_1_byte() {
+        let input = "AE".as_bytes();
+        let expected_output = decode(Alphabet::Rfc4648 { padding: false }, "AE").unwrap();
+        let mut dst = vec![0u8; 5];
+        let dst = b32dec(input, &mut dst, Rfc4648);
+        assert_eq!(dst, expected_output);
+    }
+
+    #[test]
+    fn test_b32dec_rfc4648_2_bytes() {
+        let input = "AEBA".as_bytes();
+        let expected_output = decode(Alphabet::Rfc4648 { padding: false }, "AEBA").unwrap();
+        let mut dst = vec![0u8; 5];
+        let dst = b32dec(input, &mut dst, Rfc4648);
+        assert_eq!(dst, expected_output);
+    }
+
+    #[test]
+    fn test_b32dec_rfc4648_3_bytes() {
+        let input = "AEBAG".as_bytes();
+        let expected_output = decode(Alphabet::Rfc4648 { padding: false }, "AEBAG").unwrap();
+        let mut dst = vec![0u8; 5];
+        let dst = b32dec(input, &mut dst, Rfc4648);
+        assert_eq!(dst, expected_output);
+    }
+
+    #[test]
+    fn test_b32dec_rfc4648_4_bytes() {
+        let input = "AEBAGCA".as_bytes();
+        let expected_output = decode(Alphabet::Rfc4648 { padding: false }, "AEBAGCA").unwrap();
+        let mut dst = vec![0u8; 5];
+        let dst = b32dec(input, &mut dst, Rfc4648);
+        assert_eq!(dst, expected_output);
+    }
+
+    #[test]
+    fn test_b32dec_crockford_mixed_case() {
+        let alphabet_u8 = Crockford;
+        let encoded_base = "CRRSGZDB";
+        let encoded_lower = encoded_base.to_lowercase();
+        let encoded_upper = encoded_base.to_uppercase();
+        let encoded_mixed: String = encoded_base.chars().enumerate().map(|(i, c)| {
+            if i % 2 == 0 { c.to_uppercase().next() } else { c.to_lowercase().next() }.unwrap()
+        }).collect();
+
+
+        let expected = decode(Alphabet::Crockford, encoded_base).unwrap(); // Base32 crate handles case-insensitivity for Crockford
+
+        let mut dst_lower = vec![0u8; expected.len()];
+        b32dec(encoded_lower.as_bytes(), &mut dst_lower, alphabet_u8);
+        assert_eq!(dst_lower, expected, "failed lowercase decoding");
+
+        let mut dst_upper = vec![0u8; expected.len()];
+        b32dec(encoded_upper.as_bytes(), &mut dst_upper, alphabet_u8);
+        assert_eq!(dst_upper, expected, "failed uppercase decoding");
+
+        let mut dst_mixed = vec![0u8; expected.len()];
+        b32dec(encoded_mixed.as_bytes(), &mut dst_mixed, alphabet_u8);
+        assert_eq!(dst_mixed, expected, "failed mixed case decoding");
+    }
+
 }

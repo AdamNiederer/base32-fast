@@ -587,7 +587,16 @@ mod tests {
         let input = [0; 40];
         let mut output = [0u8; 64];
         b.iter(|| {
-            black_box(b32enc(black_box(&input), black_box(&mut output), Z))
+            unsafe { black_box(b32enc_avx512::<Z>(black_box(&input), black_box(&mut output))); }
+        });
+    }
+
+    #[bench]
+    fn bench_b32enc_simd(b: &mut Bencher) {
+        let input = [0; 40];
+        let mut output = [0u8; 64];
+        b.iter(|| {
+            unsafe { black_box(b32enc_simd::<Z>(black_box(&input), black_box(&mut output))); }
         });
     }
 
