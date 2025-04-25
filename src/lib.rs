@@ -1,7 +1,7 @@
 #![cfg_attr(test, feature(test))]
 
-#![feature(portable_simd)]
-#![feature(stdarch_x86_avx512)]
+#![cfg_attr(feature = "simd", feature(portable_simd))]
+#![cfg_attr(feature = "avx-512", feature(stdarch_x86_avx512))]
 #![allow(non_upper_case_globals)]
 #![allow(dead_code)]
 

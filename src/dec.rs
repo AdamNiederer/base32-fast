@@ -1,7 +1,10 @@
-use std::arch::x86_64::*;
 use std::mem::transmute;
+#[cfg(feature = "simd")]
 use std::simd::{Simd};
+#[cfg(feature = "simd")]
 use std::simd::cmp::{SimdPartialOrd};
+#[cfg(feature = "avx-512")]
+use std::arch::x86_64::*;
 
 use crate::{Rfc4648, Rfc4648Hex, Crockford, Geohash, Z, RFC4648_CHARS, RFC4648HEX_CHARS, CROCKFORD_CHARS, GEOHASH_CHARS, Z_CHARS};
 
@@ -37,6 +40,7 @@ unsafe fn from_char<const A: u8>(value: u8) -> u8 {
 }
 
 #[inline(always)]
+#[cfg(feature = "avx-512")]
 unsafe fn from_char_avx512<const A: u8>(src: __m512i) -> __m512i {
     let lut = match A {
         Rfc4648 => RFC4648_LUT,
@@ -59,6 +63,7 @@ unsafe fn from_char_avx512<const A: u8>(src: __m512i) -> __m512i {
     _mm512_mask_blend_epi8(mask_ge_64, v_0_63, v_64_127)
 }
 
+#[cfg(feature = "simd")]
 unsafe fn from_char_simd<const A: u8>(src: Simd<u8, 64>) -> Simd<u8, 64> {
     let lut = match A {
         Rfc4648 => RFC4648_LUT,
@@ -80,6 +85,7 @@ unsafe fn from_char_simd<const A: u8>(src: Simd<u8, 64>) -> Simd<u8, 64> {
 }
 
 #[inline(always)]
+#[cfg(feature = "avx-512")]
 pub unsafe fn padcount_avx512(src: &[u8]) -> usize {
     debug_assert_eq!(src.len(), 8);
     _popcnt32(_mm_cmpeq_epi8_mask(
@@ -102,6 +108,7 @@ pub fn padcount(src: &[u8]) -> usize {
     count
 }
 
+#[cfg(feature = "avx-512")]
 unsafe fn b32dec_avx512<'a, const A: u8>(src: &'a [u8], dst: &'a mut [u8]) {
     let mut src_cur = 0;
     let mut dst_cur = 0;
@@ -192,15 +199,33 @@ pub fn b32dec<'a>(src: &'a [u8], dst: &'a mut [u8], alphabet: u8) -> &'a [u8] {
 }
 
 pub unsafe fn b32dec_generic<'a, const A: u8>(src: &'a [u8], dst: &'a mut [u8]) -> &'a [u8] {
+    #[cfg(any(feature = "avx-512", feature = "simd"))]
     if src.len() >= 64 {
-        b32dec_avx512::<A>(src, dst);
+        #[cfg(feature = "avx-512")] {
+            b32dec_avx512::<A>(src, dst);
+        }
+        // #[cfg(feature = "simd")] {
+        //     b32dec_simd::<A>(src, dst);
+        // }
     }
 
+    #[cfg(any(feature = "avx-512", feature = "simd"))]
     let src_tail = src.len() - src.len() % 64;
+    #[cfg(any(feature = "avx-512", feature = "simd"))]
     let dst_tail = dst.len() - dst.len() % 40;
 
+    #[cfg(not(any(feature = "avx-512", feature = "simd")))]
+    let src_tail = 0;
+    #[cfg(not(any(feature = "avx-512", feature = "simd")))]
+    let dst_tail = 0;
+
     let pad_count = if src.len() % 8 == 0 { 
-        padcount_avx512(&src[src.len() - 8..])
+        #[cfg(feature = "avx-512")] {
+            padcount_avx512(&src[src.len() - 8..])
+        }
+        #[cfg(not(feature = "avx-512"))] {
+            padcount(&src[src.len() - 8..])
+        }
     } else {
         8 - (src.len() % 8)
     };

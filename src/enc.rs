@@ -1,6 +1,9 @@
-use std::simd::{Simd, Mask};
-use std::simd::cmp::SimdPartialOrd;
 use std::mem::transmute;
+#[cfg(feature = "simd")]
+use std::simd::{Simd, Mask};
+#[cfg(feature = "simd")]
+use std::simd::cmp::SimdPartialOrd;
+#[cfg(feature = "avx-512")]
 use std::arch::x86_64::*;
 
 use super::{
@@ -55,6 +58,7 @@ unsafe fn to_char<const A: u8>(value: u8) -> u8 {
     }
 }
 
+#[cfg(feature = "avx-512")]
 unsafe fn to_char_avx512<const A: u8>(src: __m512i) -> __m512i {
     let lut = match A {
         Rfc4648 => RFC4648_LUT,
@@ -69,7 +73,7 @@ unsafe fn to_char_avx512<const A: u8>(src: __m512i) -> __m512i {
     _mm512_permutexvar_epi8(src, lut_reg)
 }
 
-#[inline(always)]
+#[cfg(feature = "simd")]
 unsafe fn to_char_simd<const A: u8>(src: Simd<u8, 64>) -> Simd<u8, 64> {
     match A {
         Rfc4648 => {
@@ -120,10 +124,22 @@ pub fn b32enc(src: &[u8], dst: &mut [u8], alphabet: u8) {
 }
 
 unsafe fn b32enc_generic<const A: u8>(src: &[u8], dst: &mut [u8]) {
+    #[cfg(any(feature = "avx-512", feature = "simd"))]
     let simd_src_len = (src.len() / 40) * 40;
+    #[cfg(any(feature = "avx-512", feature = "simd"))]
     let simd_dst_len = (simd_src_len / 40) * 64;
+    #[cfg(not(any(feature = "avx-512", feature = "simd")))]
+    let simd_src_len = 0;
+    #[cfg(not(any(feature = "avx-512", feature = "simd")))]
+    let simd_dst_len = 0;
+    #[cfg(any(feature = "avx-512", feature = "simd"))]
     if simd_src_len > 0 {
-        b32enc_avx512::<A>(&src[..simd_src_len], &mut dst[..simd_dst_len]);
+        #[cfg(feature = "avx-512")] {
+            b32enc_avx512::<A>(&src[..simd_src_len], &mut dst[..simd_dst_len]);
+        }
+        #[cfg(feature = "simd")] {
+            b32enc_simd::<A>(&src[..simd_src_len], &mut dst[..simd_dst_len]);
+        }
     }
 
     let rem_src = &src[simd_src_len..];
@@ -152,6 +168,7 @@ unsafe fn b32enc_generic<const A: u8>(src: &[u8], dst: &mut [u8]) {
     }
 }
 
+#[cfg(feature = "avx-512")]
 fn b32enc_avx512<'a, const A: u8>(src: &'a [u8], dst: &'a mut [u8]) -> &'a [u8] {
     let mut src_cur = 0;
     let mut dst_cur = 0;
@@ -190,7 +207,7 @@ fn b32enc_avx512<'a, const A: u8>(src: &'a [u8], dst: &'a mut [u8]) -> &'a [u8] 
     return dst;
 }
 
-#[inline(always)]
+#[cfg(feature = "simd")]
 unsafe fn b32enc_simd<'a, const A: u8>(src: &'a [u8], dst: &'a mut [u8]) -> &'a [u8] {
     const shuf: Simd<u8, 64> = Simd::from_array([
         4, 4, 4, 4, 3, 2, 1, 0,

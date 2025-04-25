@@ -1,7 +1,3 @@
-#![feature(portable_simd)]
-#![feature(stdarch_x86_avx512)]
-#![allow(non_upper_case_globals)]
-
 use clap::Parser;
 use std::io;
 use std::io::{BufReader, BufRead, BufWriter, Write};

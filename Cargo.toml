@@ -8,3 +8,7 @@ clap = { version = "4.5.26", features = ["derive"] }
 
 [dev-dependencies]
 base32 = "0.5.1"
+
+[features]
+avx-512 = []
+simd = []
