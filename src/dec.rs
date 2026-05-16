@@ -1,7 +1,7 @@
 #[cfg(feature = "simd")]
 use std::mem::transmute;
 #[cfg(feature = "simd")]
-use std::simd::{Simd};
+use std::simd::{Simd, Select};
 #[cfg(feature = "simd")]
 use std::simd::cmp::{SimdPartialOrd};
 #[cfg(feature = "avx-512")]
@@ -83,6 +83,55 @@ unsafe fn from_char_simd<const A: u8>(src: Simd<u8, 64>) -> Simd<u8, 64> {
     let v_64_127 = lut_64_127.swizzle_dyn(src & Simd::splat(0x3F)); // Hack to make 255 work - probably never encountered
 
     mask_ge_64.select(v_64_127, v_0_63)
+}
+
+#[inline(never)]
+#[cfg(feature = "simd")]
+unsafe fn b32dec_simd<'a, const A: u8>(src: &'a [u8], dst: &'a mut [u8]) {
+    let mut src_cur = 0;
+    let mut dst_cur = 0;
+
+    let byte_mask = Simd::<u64, 8>::splat(0xFF);
+
+    let pack_idx = Simd::<u8, 64>::from_array([
+        0, 1, 2, 3, 4, 8, 9, 10, 11, 12,
+        16, 17, 18, 19, 20, 24, 25, 26, 27, 28,
+        32, 33, 34, 35, 36, 40, 41, 42, 43, 44,
+        48, 49, 50, 51, 52, 56, 57, 58, 59, 60,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0,
+    ]);
+
+    while src.len() - src_cur >= 64 {
+        let s = Simd::<u8, 64>::from_slice(&src[src_cur..src_cur + 64]);
+        let d = from_char_simd::<A>(s);
+        let g: Simd<u64, 8> = transmute(d);
+
+        let g0 = g & byte_mask;
+        let g1 = (g >> 8) & byte_mask;
+        let g2 = (g >> 16) & byte_mask;
+        let g3 = (g >> 24) & byte_mask;
+        let g4 = (g >> 32) & byte_mask;
+        let g5 = (g >> 40) & byte_mask;
+        let g6 = (g >> 48) & byte_mask;
+        let g7 = g >> 56;
+
+        let o0 = (g0 << 3) | (g1 >> 2);
+        let o1 = ((g1 << 6) | (g2 << 1) | (g3 >> 4)) & byte_mask;
+        let o2 = ((g3 << 4) | (g4 >> 1)) & byte_mask;
+        let o3 = ((g4 << 7) | (g5 << 2) | (g6 >> 3)) & byte_mask;
+        let o4 = ((g6 << 5) | g7) & byte_mask;
+
+        let out64 = o0 | (o1 << 8) | (o2 << 16) | (o3 << 24) | (o4 << 32);
+
+        let out_bytes: Simd<u8, 64> = transmute(out64);
+        let packed = out_bytes.swizzle_dyn(pack_idx);
+        core::ptr::copy_nonoverlapping(packed.as_array().as_ptr(), dst.as_mut_ptr().add(dst_cur), 40);
+
+        src_cur += 64;
+        dst_cur += 40;
+    }
 }
 
 #[inline(always)]
@@ -204,8 +253,8 @@ pub unsafe fn b32dec_generic<'a, const A: u8>(src: &'a [u8], dst: &'a mut [u8]) 
     if src.len() >= 64 {
         #[cfg(feature = "avx-512")]
         b32dec_avx512::<A>(src, dst);
-        // #[cfg(all(feature = "simd", not(feature = "avx-512")))]
-        // b32dec_simd::<A>(src, dst);
+        #[cfg(all(feature = "simd"))]
+        b32dec_simd::<A>(src, dst);
     }
 
     #[cfg(any(feature = "avx-512", feature = "simd"))]
@@ -490,6 +539,36 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "simd")]
+    fn test_b32dec_simd_rfc4648() {
+        let input = b"ORSXG5DJORUXG5LNORUWYZLSEBFWC2LTN5ZG64DDMNWGC2LPN5ZG64TON5XHIZLE";
+        let expected = decode(Alphabet::Rfc4648 { padding: true }, core::str::from_utf8(input).unwrap()).unwrap();
+        let mut output = [0u8; 40];
+        unsafe {
+            b32dec_simd::<{Rfc4648}>(input, &mut output);
+        }
+        assert_eq!(&output[..expected.len()], &expected);
+    }
+
+    #[test]
+    #[cfg(feature = "simd")]
+    fn test_b32dec_simd_boundary() {
+        for data_len in [1, 2, 3, 4, 5, 6, 7, 63, 64, 65, 127, 128, 129] {
+            let data: Vec<u8> = (0..data_len).map(|i| i as u8).collect();
+            let encoded = encode(Alphabet::Rfc4648 { padding: false }, &data);
+            let expected = decode(Alphabet::Rfc4648 { padding: false }, &encoded).unwrap();
+            let mut dst = vec![0u8; (expected.len() + 4) / 5 * 5];
+            let dst = b32dec(encoded.as_bytes(), &mut dst, Rfc4648);
+            assert_eq!(dst, expected, "failed for length {}", data_len);
+            let encoded_pad = encode(Alphabet::Rfc4648 { padding: true }, &data);
+            let expected_pad = decode(Alphabet::Rfc4648 { padding: true }, &encoded_pad).unwrap();
+            let mut dst_pad = vec![0u8; (expected_pad.len() + 4) / 5 * 5];
+            let dst_pad = b32dec(encoded_pad.as_bytes(), &mut dst_pad, Rfc4648);
+            assert_eq!(dst_pad, expected_pad, "failed for padded length {}", data_len);
+        }
+    }
+
+    #[test]
     #[cfg(feature = "avx-512")]
     fn test_padcount_avx512_none() {
         let src: [u8; 8] = *b"ABCDEFGH";
@@ -621,6 +700,16 @@ mod tests {
         let mut output = [0u8; 40];
         b.iter(|| {
             black_box(b32dec(black_box(input), black_box(&mut output), Z));
+        });
+    }
+
+    #[bench]
+    #[cfg(feature = "simd")]
+    fn bench_b32dec_simd(b: &mut Bencher) {
+        let input = b"GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+        let mut output = [0u8; 40];
+        b.iter(|| {
+            unsafe { black_box(b32dec_simd::<Z>(black_box(input), black_box(&mut output))) };
         });
     }
 

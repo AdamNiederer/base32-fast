@@ -1,7 +1,7 @@
 #[cfg(feature = "simd")]
 use std::mem::transmute;
 #[cfg(feature = "simd")]
-use std::simd::{Simd, Mask};
+use std::simd::{Simd, Mask, Select};
 #[cfg(feature = "simd")]
 use std::simd::cmp::SimdPartialOrd;
 #[cfg(feature = "avx-512")]
