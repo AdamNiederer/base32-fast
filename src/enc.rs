@@ -175,7 +175,7 @@ fn b32enc_avx512<'a, const A: u8>(src: &'a [u8], dst: &'a mut [u8]) -> &'a [u8] 
     let mut dst_cur = 0;
     while src.len() - src_cur >= 40 {
         unsafe {
-            let s = _mm512_loadu_si512(src.as_ptr().add(src_cur) as *const i32);
+            let s = _mm512_loadu_epi8(src.as_ptr().add(src_cur) as *const i8);
             let shuf = _mm512_set_epi8(
                 35, 36, 37, 38, 39, 39, 39, 39,
                 30, 31, 32, 33, 34, 34, 34, 34,
@@ -596,6 +596,18 @@ mod tests {
                 let actual = to_char::<Z>(value);
                 assert_eq!(actual, expected, "Z mismatch for value {}", value);
             }
+        }
+    }
+
+    #[bench]
+    fn bench_to_char(b: &mut Bencher) {
+        let input: Vec<u8> = (0..32).chain(0..32).collect();
+        unsafe {
+            b.iter(|| {
+                for src in input.iter() {
+                    black_box(to_char::<Z>(black_box(*src)));
+                }
+            });
         }
     }
 
