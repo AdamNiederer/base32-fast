@@ -1,3 +1,4 @@
+#[cfg(feature = "simd")]
 use std::mem::transmute;
 #[cfg(feature = "simd")]
 use std::simd::{Simd, Mask};
@@ -61,11 +62,11 @@ unsafe fn to_char<const A: u8>(value: u8) -> u8 {
 #[cfg(feature = "avx-512")]
 unsafe fn to_char_avx512<const A: u8>(src: __m512i) -> __m512i {
     let lut = match A {
-        Rfc4648 => RFC4648_LUT,
-        Rfc4648Hex => RFC4648HEX_LUT,
-        Crockford => CROCKFORD_LUT,
-        Geohash => GEOHASH_LUT,
-        Z => Z_LUT,
+        Rfc4648 => &RFC4648_LUT,
+        Rfc4648Hex => &RFC4648HEX_LUT,
+        Crockford => &CROCKFORD_LUT,
+        Geohash => &GEOHASH_LUT,
+        Z => &Z_LUT,
         _ => core::hint::unreachable_unchecked(), 
     };
     
@@ -137,7 +138,7 @@ unsafe fn b32enc_generic<const A: u8>(src: &[u8], dst: &mut [u8]) {
         #[cfg(feature = "avx-512")] {
             b32enc_avx512::<A>(&src[..simd_src_len], &mut dst[..simd_dst_len]);
         }
-        #[cfg(feature = "simd")] {
+        #[cfg(all(feature = "simd", not(feature = "avx-512")))] {
             b32enc_simd::<A>(&src[..simd_src_len], &mut dst[..simd_dst_len]);
         }
     }
@@ -423,6 +424,7 @@ mod tests {
     ];
 
     #[test]
+    #[cfg(feature = "avx-512")]
     fn test_rfc4648_avx512() {
         unsafe {
             let src = _mm512_loadu_si512(TO_CHAR_INPUT.as_ptr() as *const _);
@@ -434,6 +436,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "avx-512")]
     fn test_rfc4648hex_avx512() {
         unsafe {
             let src = _mm512_loadu_si512(TO_CHAR_INPUT.as_ptr() as *const _);
@@ -445,6 +448,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "avx-512")]
     fn test_crockford_avx512() {
         unsafe {
             let src = _mm512_loadu_si512(TO_CHAR_INPUT.as_ptr() as *const _);
@@ -456,6 +460,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "avx-512")]
     fn test_geohash_avx512() {
         unsafe {
             let src = _mm512_loadu_si512(TO_CHAR_INPUT.as_ptr() as *const _);
@@ -467,6 +472,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "avx-512")]
     fn test_z_avx512() {
         unsafe {
             let src = _mm512_loadu_si512(TO_CHAR_INPUT.as_ptr() as *const _);
@@ -479,6 +485,7 @@ mod tests {
 
 
     #[test]
+    #[cfg(feature = "simd")]
     fn test_rfc4648_simd() {
         unsafe {
             let src = Simd::<u8, 64>::from_slice(&TO_CHAR_INPUT);
@@ -490,6 +497,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "simd")]
     fn test_rfc4648hex_simd() {
         unsafe {
             let src = Simd::<u8, 64>::from_slice(&TO_CHAR_INPUT);
@@ -501,6 +509,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "simd")]
     fn test_crockford_simd() {
         unsafe {
             let src = Simd::<u8, 64>::from_slice(&TO_CHAR_INPUT);
@@ -512,6 +521,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "simd")]
     fn test_geohash_simd() {
         unsafe {
             let src = Simd::<u8, 64>::from_slice(&TO_CHAR_INPUT);
@@ -523,6 +533,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "simd")]
     fn test_z_simd() {
         unsafe {
             let src = Simd::<u8, 64>::from_slice(&TO_CHAR_INPUT);
@@ -589,6 +600,7 @@ mod tests {
     }
 
     #[bench]
+    #[cfg(feature = "avx-512")]
     fn bench_to_char_avx512(b: &mut Bencher) {
         let input = [0; 64];
         unsafe {
@@ -600,15 +612,17 @@ mod tests {
     }
     
     #[bench]
+    #[cfg(feature = "avx-512")]
     fn bench_b32enc_avx512(b: &mut Bencher) {
         let input = [0; 40];
         let mut output = [0u8; 64];
         b.iter(|| {
-            unsafe { black_box(b32enc_avx512::<Z>(black_box(&input), black_box(&mut output))); }
+            black_box(b32enc_avx512::<Z>(black_box(&input), black_box(&mut output)));
         });
     }
 
     #[bench]
+    #[cfg(feature = "simd")]
     fn bench_b32enc_simd(b: &mut Bencher) {
         let input = [0; 40];
         let mut output = [0u8; 64];

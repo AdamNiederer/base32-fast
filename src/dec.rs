@@ -1,3 +1,4 @@
+#[cfg(feature = "simd")]
 use std::mem::transmute;
 #[cfg(feature = "simd")]
 use std::simd::{Simd};
@@ -43,11 +44,11 @@ unsafe fn from_char<const A: u8>(value: u8) -> u8 {
 #[cfg(feature = "avx-512")]
 unsafe fn from_char_avx512<const A: u8>(src: __m512i) -> __m512i {
     let lut = match A {
-        Rfc4648 => RFC4648_LUT,
-        Rfc4648Hex => RFC4648HEX_LUT,
-        Crockford => CROCKFORD_LUT,
-        Geohash => GEOHASH_LUT,
-        Z => Z_LUT,
+        Rfc4648 => &RFC4648_LUT,
+        Rfc4648Hex => &RFC4648HEX_LUT,
+        Crockford => &CROCKFORD_LUT,
+        Geohash => &GEOHASH_LUT,
+        Z => &Z_LUT,
         _ => core::hint::unreachable_unchecked(),
     };
 
@@ -66,11 +67,11 @@ unsafe fn from_char_avx512<const A: u8>(src: __m512i) -> __m512i {
 #[cfg(feature = "simd")]
 unsafe fn from_char_simd<const A: u8>(src: Simd<u8, 64>) -> Simd<u8, 64> {
     let lut = match A {
-        Rfc4648 => RFC4648_LUT,
-        Rfc4648Hex => RFC4648HEX_LUT,
-        Crockford => CROCKFORD_LUT,
-        Geohash => GEOHASH_LUT,
-        Z => Z_LUT,
+        Rfc4648 => &RFC4648_LUT,
+        Rfc4648Hex => &RFC4648HEX_LUT,
+        Crockford => &CROCKFORD_LUT,
+        Geohash => &GEOHASH_LUT,
+        Z => &Z_LUT,
         _ => core::hint::unreachable_unchecked(),
     };
 
@@ -113,7 +114,7 @@ unsafe fn b32dec_avx512<'a, const A: u8>(src: &'a [u8], dst: &'a mut [u8]) {
     let mut src_cur = 0;
     let mut dst_cur = 0;
     while src.len() - src_cur >= 64 {
-        let s = _mm512_loadu_si512(src.as_ptr().add(src_cur) as *const i32);
+        let s = _mm512_loadu_si512(src.as_ptr().add(src_cur) as *const __m512i);
         let d = from_char_avx512::<A>(s);
         // -> 000eeeee 000ddeee 000ddddd 000ccccd 000bcccc 000bbbbb 000aaabb 000aaaaa
 
@@ -201,12 +202,10 @@ pub fn b32dec<'a>(src: &'a [u8], dst: &'a mut [u8], alphabet: u8) -> &'a [u8] {
 pub unsafe fn b32dec_generic<'a, const A: u8>(src: &'a [u8], dst: &'a mut [u8]) -> &'a [u8] {
     #[cfg(any(feature = "avx-512", feature = "simd"))]
     if src.len() >= 64 {
-        #[cfg(feature = "avx-512")] {
-            b32dec_avx512::<A>(src, dst);
-        }
-        // #[cfg(feature = "simd")] {
-        //     b32dec_simd::<A>(src, dst);
-        // }
+        #[cfg(feature = "avx-512")]
+        b32dec_avx512::<A>(src, dst);
+        // #[cfg(all(feature = "simd", not(feature = "avx-512")))]
+        // b32dec_simd::<A>(src, dst);
     }
 
     #[cfg(any(feature = "avx-512", feature = "simd"))]
@@ -350,6 +349,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "avx-512")]
     fn test_from_char_avx512_rfc4648() {
         unsafe {
             let src_reg = _mm512_loadu_si512(FROM_CHAR_INPUT.as_ptr() as *const _);
@@ -363,6 +363,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "avx-512")]
     fn test_from_char_avx512_rfc4648hex() {
         unsafe {
             let src_reg = _mm512_loadu_si512(FROM_CHAR_INPUT.as_ptr() as *const _);
@@ -376,6 +377,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "avx-512")]
     fn test_from_char_avx512_crockford() {
         unsafe {
             let src_reg = _mm512_loadu_si512(FROM_CHAR_INPUT.as_ptr() as *const _);
@@ -389,6 +391,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "avx-512")]
     fn test_from_char_avx512_geohash() {
         unsafe {
             let src_reg = _mm512_loadu_si512(FROM_CHAR_INPUT.as_ptr() as *const _);
@@ -402,6 +405,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "avx-512")]
     fn test_from_char_avx512_z() {
         unsafe {
             let src_reg = _mm512_loadu_si512(FROM_CHAR_INPUT.as_ptr() as *const _);
@@ -415,6 +419,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "simd")]
     fn test_from_char_simd_rfc4648() {
         unsafe {
             let src_simd = Simd::<u8, 64>::from_slice(&FROM_CHAR_INPUT);
@@ -428,6 +433,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "simd")]
     fn test_from_char_simd_rfc4648hex() {
         unsafe {
             let src_simd = Simd::<u8, 64>::from_slice(&FROM_CHAR_INPUT);
@@ -441,6 +447,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "simd")]
     fn test_from_char_simd_crockford() {
         unsafe {
             let src_simd = Simd::<u8, 64>::from_slice(&FROM_CHAR_INPUT);
@@ -454,6 +461,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "simd")]
     fn test_from_char_simd_geohash() {
         unsafe {
             let src_simd = Simd::<u8, 64>::from_slice(&FROM_CHAR_INPUT);
@@ -467,6 +475,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "simd")]
     fn test_from_char_simd_z() {
         unsafe {
             let src_simd = Simd::<u8, 64>::from_slice(&FROM_CHAR_INPUT);
@@ -480,6 +489,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "avx-512")]
     fn test_padcount_avx512_none() {
         let src: [u8; 8] = *b"ABCDEFGH";
         let count = unsafe { padcount_avx512(&src) };
@@ -487,6 +497,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "avx-512")]
     fn test_padcount_avx512_one() {
         let src: [u8; 8] = *b"ABCDEFG=";
         let count = unsafe { padcount_avx512(&src) };
@@ -494,6 +505,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "avx-512")]
     fn test_padcount_avx512_two() {
         let src: [u8; 8] = *b"ABCDEF==";
         let count = unsafe { padcount_avx512(&src) };
@@ -501,6 +513,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "avx-512")]
     fn test_padcount_avx512_all() {
         let src: [u8; 8] = *b"========";
         let count = unsafe { padcount_avx512(&src) };
@@ -537,6 +550,7 @@ mod tests {
 
 
     #[bench]
+    #[cfg(feature = "avx-512")]
     fn bench_from_char_avx512(b: &mut Bencher) {
         unsafe {
             let src_reg = _mm512_loadu_si512(FROM_CHAR_INPUT.as_ptr() as *const _);
@@ -547,6 +561,7 @@ mod tests {
     }
 
     #[bench]
+    #[cfg(feature = "simd")]
     fn bench_from_char_simd(b: &mut Bencher) {
         unsafe {
             let src_simd = Simd::<u8, 64>::from_slice(&FROM_CHAR_INPUT);
@@ -589,6 +604,7 @@ mod tests {
     }
 
     #[bench]
+    #[cfg(feature = "avx-512")]
     fn bench_padcount_avx512(b: &mut Bencher) {
         b.iter(|| {
             for input in PADCOUNT_INPUT.iter() {
@@ -598,6 +614,7 @@ mod tests {
     }
 
     #[bench]
+    #[cfg(feature = "avx-512")]
     fn bench_b32dec_avx512(b: &mut Bencher) {
         let input = b"GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
         let mut output = [0u8; 40];
