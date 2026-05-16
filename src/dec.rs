@@ -183,7 +183,7 @@ pub fn b32dec<'a>(src: &'a [u8], dst: &'a mut [u8], alphabet: u8) -> &'a [u8] {
         return &dst[0..0];
     }
 
-    if dst.len() < ((src.len() + 3) / 8) * 5 {
+    if dst.len() < ((src.len() + 7) / 8) * 5 {
         panic!("destination buffer too small");
     }
 
@@ -211,7 +211,7 @@ pub unsafe fn b32dec_generic<'a, const A: u8>(src: &'a [u8], dst: &'a mut [u8]) 
     #[cfg(any(feature = "avx-512", feature = "simd"))]
     let src_tail = src.len() - src.len() % 64;
     #[cfg(any(feature = "avx-512", feature = "simd"))]
-    let dst_tail = dst.len() - dst.len() % 40;
+    let dst_tail = src_tail / 64 * 40;
 
     #[cfg(not(any(feature = "avx-512", feature = "simd")))]
     let src_tail = 0;
@@ -260,6 +260,7 @@ mod tests {
     use super::*;
     use test::bench::Bencher;
     use std::hint::black_box;
+    use std::panic::{catch_unwind, AssertUnwindSafe};
 
     fn expected_from_char(src: u8, alphabet: &[u8; 32]) -> u8 {
         if src == b'=' {
@@ -758,6 +759,20 @@ mod tests {
         let mut dst = vec![0u8; 5];
         let dst = b32dec(input.as_bytes(), &mut dst, Rfc4648);
         assert_eq!(dst, expected_output);
+    }
+
+    #[test]
+    fn test_b32dec_underalloced_dst() {
+        let cases = [(2, 5), (4, 5), (5, 5), (7, 5), (8, 5), (10, 10), (12, 10), (13, 10), (15, 10), (16, 10)];
+        for &(encoded_len, needed) in &cases {
+            let encoded: Vec<u8> = (0..encoded_len)
+                .map(|i| b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"[i % 32])
+                .collect();
+            let mut dst = vec![0u8; needed - 1];
+            assert!(catch_unwind(AssertUnwindSafe(|| { b32dec(&encoded, &mut dst, Rfc4648); })).is_err());
+            let mut dst = vec![0u8; needed];
+            assert!(catch_unwind(AssertUnwindSafe(|| {b32dec(&encoded, &mut dst, Rfc4648); })).is_ok());
+        }
     }
 
     #[test]

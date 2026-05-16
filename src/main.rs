@@ -64,7 +64,7 @@ fn main() {
             if num_read == 0 {
                 break;
             }
-            let expected_out = num_read / 8 * 5;
+            let expected_out = (num_read + 7) / 8 * 5;
             b32dec(&read_buf[..num_read], &mut write_buf[..expected_out], alphabet);
             match writer.write_all(&mut write_buf[..expected_out]) {
                 Ok(_) => (),
