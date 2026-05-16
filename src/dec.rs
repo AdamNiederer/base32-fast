@@ -718,7 +718,7 @@ mod tests {
         let input = b"GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBV";
         let mut output = [0u8; 35];
         b.iter(|| {
-            black_box(b32dec(black_box(input), black_box(&mut output), Z));
+            unsafe { black_box(b32dec_generic::<Z>(black_box(input), black_box(&mut output))) };
         });
     }
 

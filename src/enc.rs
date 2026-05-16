@@ -170,38 +170,36 @@ unsafe fn b32enc_generic<const A: u8>(src: &[u8], dst: &mut [u8]) {
 }
 
 #[cfg(feature = "avx-512")]
-fn b32enc_avx512<'a, const A: u8>(src: &'a [u8], dst: &'a mut [u8]) -> &'a [u8] {
+unsafe fn b32enc_avx512<'a, const A: u8>(src: &'a [u8], dst: &'a mut [u8]) -> &'a [u8] {
     let mut src_cur = 0;
     let mut dst_cur = 0;
     while src.len() - src_cur >= 40 {
-        unsafe {
-            let s = _mm512_maskz_loadu_epi8(0x000000FFFFFFFFFF, src.as_ptr().add(src_cur) as *const i8);
-            let shuf = _mm512_set_epi8(
-                35, 36, 37, 38, 39, 39, 39, 39,
-                30, 31, 32, 33, 34, 34, 34, 34,
-                25, 26, 27, 28, 29, 29, 29, 29,
-                20, 21, 22, 23, 24, 24, 24, 24,
-                15, 16, 17, 18, 19, 19, 19, 19,
-                10, 11, 12, 13, 14, 14, 14, 14,
-                5, 6, 7, 8, 9, 9, 9, 9,
-                0, 1, 2, 3, 4, 4, 4, 4,
-            );
-            let p = _mm512_permutexvar_epi8(shuf, s);
-            let multishift = _mm512_set_epi8(
-                24, 29, 34, 39, 44, 49, 54, 59,
-                24, 29, 34, 39, 44, 49, 54, 59,
-                24, 29, 34, 39, 44, 49, 54, 59,
-                24, 29, 34, 39, 44, 49, 54, 59,
-                24, 29, 34, 39, 44, 49, 54, 59,
-                24, 29, 34, 39, 44, 49, 54, 59,
-                24, 29, 34, 39, 44, 49, 54, 59,
-                24, 29, 34, 39, 44, 49, 54, 59,
-            );
-            let shifted = _mm512_multishift_epi64_epi8(multishift, p);
-            let masked = _mm512_and_si512(shifted, _mm512_set1_epi8(0x1F));
-            let res = to_char_avx512::<{A}>(masked);
-            _mm512_storeu_si512(dst.as_ptr().add(dst_cur) as *mut __m512i, res);
-        }
+        let s = _mm512_maskz_loadu_epi8(0x000000FFFFFFFFFF, src.as_ptr().add(src_cur) as *const i8);
+        let shuf = _mm512_set_epi8(
+            35, 36, 37, 38, 39, 39, 39, 39,
+            30, 31, 32, 33, 34, 34, 34, 34,
+            25, 26, 27, 28, 29, 29, 29, 29,
+            20, 21, 22, 23, 24, 24, 24, 24,
+            15, 16, 17, 18, 19, 19, 19, 19,
+            10, 11, 12, 13, 14, 14, 14, 14,
+            5, 6, 7, 8, 9, 9, 9, 9,
+            0, 1, 2, 3, 4, 4, 4, 4,
+        );
+        let p = _mm512_permutexvar_epi8(shuf, s);
+        let multishift = _mm512_set_epi8(
+            24, 29, 34, 39, 44, 49, 54, 59,
+            24, 29, 34, 39, 44, 49, 54, 59,
+            24, 29, 34, 39, 44, 49, 54, 59,
+            24, 29, 34, 39, 44, 49, 54, 59,
+            24, 29, 34, 39, 44, 49, 54, 59,
+            24, 29, 34, 39, 44, 49, 54, 59,
+            24, 29, 34, 39, 44, 49, 54, 59,
+            24, 29, 34, 39, 44, 49, 54, 59,
+        );
+        let shifted = _mm512_multishift_epi64_epi8(multishift, p);
+        let masked = _mm512_and_si512(shifted, _mm512_set1_epi8(0x1F));
+        let res = to_char_avx512::<{A}>(masked);
+        _mm512_storeu_si512(dst.as_ptr().add(dst_cur) as *mut __m512i, res);
         src_cur += 40;
         dst_cur += 64;
     }
@@ -629,7 +627,7 @@ mod tests {
         let input = [0; 40];
         let mut output = [0u8; 64];
         b.iter(|| {
-            black_box(b32enc_avx512::<Z>(black_box(&input), black_box(&mut output)));
+            unsafe { black_box(b32enc_avx512::<Z>(black_box(&input), black_box(&mut output))) };
         });
     }
 
@@ -639,7 +637,7 @@ mod tests {
         let input = [0; 40];
         let mut output = [0u8; 64];
         b.iter(|| {
-            unsafe { black_box(b32enc_simd::<Z>(black_box(&input), black_box(&mut output))); }
+            unsafe { black_box(b32enc_simd::<Z>(black_box(&input), black_box(&mut output))) };
         });
     }
 
@@ -648,7 +646,7 @@ mod tests {
         let input = [0; 35];
         let mut output = [0u8; 56];
         b.iter(|| {
-            black_box(b32enc(black_box(&input), black_box(&mut output), Z))
+            unsafe { black_box(b32enc_generic::<Z>(black_box(&input), black_box(&mut output))) };
         });
     }
 }

@@ -35,24 +35,24 @@ implementation using Rust's `std::simd`, and a handwritten AVX-512
 implementation.
 
 If you can use the AVX-512 path, do so. The encoder uses multishift instructions
-to achieve 0.37 cycles per byte, and the decoder abuses integer FMA instructions
-to achieve 0.4 cycles per byte on Zen 5.
+and the decoder abuses integer FMA instructions to maximize speed, and the SIMD
+implementation can do neither.
 
 `-Zbuild-std` is required for the portable SIMD path to be fast on some
 architectures, especially those with AVX-512.
 
 ```
-$ RUSTFLAGS="-C target-cpu=native" cargo bench --features simd,avx-512 -Zbuild-std
-test dec::tests::bench_b32dec           ... bench:          22.10 ns/iter (+/- 0.75)
-test dec::tests::bench_b32dec_avx512    ... bench:           2.86 ns/iter (+/- 0.00)
-test dec::tests::bench_from_char        ... bench:          18.25 ns/iter (+/- 5.96)
+test dec::tests::bench_b32dec           ... bench:          21.84 ns/iter (+/- 0.59)
+test dec::tests::bench_b32dec_avx512    ... bench:           1.16 ns/iter (+/- 0.17)
+test dec::tests::bench_b32dec_simd      ... bench:           2.76 ns/iter (+/- 0.01)
+test dec::tests::bench_from_char        ... bench:          18.28 ns/iter (+/- 0.10)
 test dec::tests::bench_from_char_avx512 ... bench:           0.43 ns/iter (+/- 0.00)
-test dec::tests::bench_from_char_simd   ... bench:           0.43 ns/iter (+/- 0.01)
-test dec::tests::bench_padcount         ... bench:           8.47 ns/iter (+/- 0.40)
-test dec::tests::bench_padcount_avx512  ... bench:           2.57 ns/iter (+/- 0.00)
-test enc::tests::bench_b32enc           ... bench:          36.37 ns/iter (+/- 0.07)
-test enc::tests::bench_b32enc_avx512    ... bench:           6.28 ns/iter (+/- 0.01)
-test enc::tests::bench_b32enc_simd      ... bench:          10.42 ns/iter (+/- 0.07)
-test enc::tests::bench_to_char          ... bench:          18.99 ns/iter (+/- 5.20)
+test dec::tests::bench_from_char_simd   ... bench:           0.43 ns/iter (+/- 0.00)
+test dec::tests::bench_padcount         ... bench:           8.38 ns/iter (+/- 0.58)
+test dec::tests::bench_padcount_avx512  ... bench:           2.57 ns/iter (+/- 0.01)
+test enc::tests::bench_b32enc           ... bench:          58.35 ns/iter (+/- 0.42)
+test enc::tests::bench_b32enc_avx512    ... bench:           1.14 ns/iter (+/- 0.03)
+test enc::tests::bench_b32enc_simd      ... bench:          10.42 ns/iter (+/- 0.02)
+test enc::tests::bench_to_char          ... bench:          18.98 ns/iter (+/- 0.03)
 test enc::tests::bench_to_char_avx512   ... bench:           0.38 ns/iter (+/- 0.00)
 ```
