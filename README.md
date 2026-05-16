@@ -41,18 +41,20 @@ implementation can do neither.
 `-Zbuild-std` is required for the portable SIMD path to be fast on some
 architectures, especially those with AVX-512.
 
+Benchmarks of each code path:
+
 ```
 test dec::tests::bench_b32dec           ... bench:          21.84 ns/iter (+/- 0.59)
-test dec::tests::bench_b32dec_avx512    ... bench:           1.16 ns/iter (+/- 0.17)
 test dec::tests::bench_b32dec_simd      ... bench:           2.76 ns/iter (+/- 0.01)
-test dec::tests::bench_from_char        ... bench:          18.28 ns/iter (+/- 0.10)
-test dec::tests::bench_from_char_avx512 ... bench:           0.43 ns/iter (+/- 0.00)
-test dec::tests::bench_from_char_simd   ... bench:           0.43 ns/iter (+/- 0.00)
-test dec::tests::bench_padcount         ... bench:           8.38 ns/iter (+/- 0.58)
-test dec::tests::bench_padcount_avx512  ... bench:           2.57 ns/iter (+/- 0.01)
+test dec::tests::bench_b32dec_avx512    ... bench:           1.16 ns/iter (+/- 0.17)
 test enc::tests::bench_b32enc           ... bench:          58.35 ns/iter (+/- 0.42)
-test enc::tests::bench_b32enc_avx512    ... bench:           1.14 ns/iter (+/- 0.03)
 test enc::tests::bench_b32enc_simd      ... bench:          10.42 ns/iter (+/- 0.02)
-test enc::tests::bench_to_char          ... bench:          18.98 ns/iter (+/- 0.03)
-test enc::tests::bench_to_char_avx512   ... bench:           0.38 ns/iter (+/- 0.00)
+test enc::tests::bench_b32enc_avx512    ... bench:           1.14 ns/iter (+/- 0.03)
+```
+
+Equivalent benchmarks of the `base32` crate for comparison:
+
+```
+test dec::tests::bench_base32_decode    ... bench:          39.12 ns/iter (+/- 0.34)
+test enc::tests::bench_base32_encode    ... bench:          66.15 ns/iter (+/- 1.57)
 ```

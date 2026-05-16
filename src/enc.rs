@@ -80,9 +80,14 @@ mod enc_simd;
 mod enc_avx512;
 
 #[cfg(test)]
+extern crate test;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use base32::{encode, Alphabet};
+    use std::hint::black_box;
+    use test::Bencher;
 
     fn encoded_len(input_len: usize) -> usize {
         ((input_len + 4) / 5) * 8
@@ -228,5 +233,13 @@ mod tests {
         b32enc(&src, &mut dst, Rfc4648);
         let expected = encode(Alphabet::Rfc4648 { padding: true }, &src);
         assert_eq!(std::str::from_utf8(&dst).unwrap(), expected);
+    }
+
+    #[bench]
+    fn bench_base32_encode(b: &mut Bencher) {
+        let input = [0; 40];
+        b.iter(|| {
+            black_box(encode(Alphabet::Rfc4648 { padding: true }, black_box(&input)));
+        });
     }
 }

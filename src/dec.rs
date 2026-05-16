@@ -73,8 +73,10 @@ extern crate test;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::hint::black_box;
     use std::panic::{catch_unwind, AssertUnwindSafe};
     use base32::{Alphabet, encode, decode};
+    use test::Bencher;
 
     #[test]
     fn test_b32dec_rfc4648_padding_empty() {
@@ -275,5 +277,13 @@ mod tests {
         let mut dst_mixed = vec![0u8; expected.len()];
         b32dec(encoded_mixed.as_bytes(), &mut dst_mixed, alphabet_u8);
         assert_eq!(dst_mixed, expected, "failed mixed case decoding");
+    }
+
+    #[bench]
+    fn bench_base32_decode(b: &mut Bencher) {
+        let input = std::str::from_utf8(&[b'A'; 64]).unwrap();
+        b.iter(|| {
+            black_box(decode(Alphabet::Rfc4648 { padding: true }, black_box(input)).unwrap());
+        });
     }
 }
