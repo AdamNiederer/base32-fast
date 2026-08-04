@@ -41,7 +41,7 @@ implementation can do neither.
 `-Zbuild-std` is required for the portable SIMD path to be fast on some
 architectures, especially those with AVX-512.
 
-Benchmarks of each code path:
+Benchmarks of each code path per 64-byte block:
 
 ```
 test dec::tests::bench_b32dec           ... bench:          21.84 ns/iter (+/- 0.59)
@@ -57,4 +57,20 @@ Equivalent benchmarks of the `base32` crate for comparison:
 ```
 test dec::tests::bench_base32_decode    ... bench:          39.12 ns/iter (+/- 0.34)
 test enc::tests::bench_base32_encode    ... bench:          66.15 ns/iter (+/- 1.57)
+```
+
+Benchmarks with 1MB of data:
+
+```
+test dec::tests::bench_b32dec_avx512_bulk ... bench:     199,036.20 ns/iter (+/- 20,178.75)
+test dec::tests::bench_b32dec_simd_bulk   ... bench:     661,083.40 ns/iter (+/- 4,813.39)
+test enc::tests::bench_b32enc_avx512_bulk ... bench:     184,308.08 ns/iter (+/- 2,036.40)
+test enc::tests::bench_b32enc_simd_bulk   ... bench:     351,228.25 ns/iter (+/- 4,039.00)
+```
+
+Compared to base32:
+
+```
+test dec::tests::bench_base32_decode_bulk ... bench:   8,315,518.80 ns/iter (+/- 77,973.30)
+test enc::tests::bench_base32_encode_bulk ... bench:   7,334,881.90 ns/iter (+/- 106,046.64)
 ```
