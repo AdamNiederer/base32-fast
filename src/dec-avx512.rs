@@ -16,11 +16,8 @@ pub(crate) fn from_char_avx512<const A: u8>(src: __m512i) -> __m512i {
     unsafe {
         let lut_0_63 = _mm512_loadu_si512(lut.as_ptr() as *const _);
         let lut_64_127 = _mm512_loadu_si512(lut.as_ptr().offset(64) as *const _);
-        let v_0_63 = _mm512_permutexvar_epi8(src, lut_0_63);
-        let v_64_127 = _mm512_permutexvar_epi8(src, lut_64_127);
-        let mask_ge_64 = _mm512_cmpge_epu8_mask(src, _mm512_set1_epi8(64u8 as i8));
 
-        _mm512_mask_blend_epi8(mask_ge_64, v_0_63, v_64_127)
+        _mm512_permutex2var_epi8(lut_0_63, src, lut_64_127)
     }
 }
 
