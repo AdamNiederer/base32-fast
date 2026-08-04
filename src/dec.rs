@@ -23,35 +23,33 @@ pub(crate) const GEOHASH_LUT: [u8; 256] = generate_decode_lut(GEOHASH_CHARS);
 pub(crate) const Z_LUT: [u8; 256] = generate_decode_lut(Z_CHARS);
 
 #[inline(always)]
-pub(crate) unsafe fn from_char<const A: u8>(value: u8) -> u8 {
+pub(crate) fn from_char<const A: u8>(value: u8) -> u8 {
     match A {
         Rfc4648 => RFC4648_LUT[value as usize],
         Rfc4648Hex => RFC4648HEX_LUT[value as usize],
         Crockford => CROCKFORD_LUT[value as usize],
         Geohash => GEOHASH_LUT[value as usize],
         Z => Z_LUT[value as usize],
-        _ => core::hint::unreachable_unchecked(),
+        _ => unsafe { core::hint::unreachable_unchecked() },
     }
 }
 
 pub fn b32dec<'a>(src: &'a [u8], dst: &'a mut [u8], alphabet: u8) -> &'a [u8] {
-    if src.len() == 0 {
+    if src.is_empty() {
         return &dst[0..0];
     }
 
-    if dst.len() < ((src.len() + 7) / 8) * 5 {
+    if dst.len() < src.len().div_ceil(8) * 5 {
         panic!("destination buffer too small");
     }
 
-    unsafe {
-        match alphabet {
-            Rfc4648 => b32dec_generic::<Rfc4648>(src, dst),
-            Rfc4648Hex => b32dec_generic::<Rfc4648Hex>(src, dst),
-            Crockford => b32dec_generic::<Crockford>(src, dst),
-            Geohash => b32dec_generic::<Geohash>(src, dst),
-            Z => b32dec_generic::<Z>(src, dst),
-            _ => panic!("invalid alphabet selected"),
-        }
+    match alphabet {
+        Rfc4648 => b32dec_generic::<Rfc4648>(src, dst),
+        Rfc4648Hex => b32dec_generic::<Rfc4648Hex>(src, dst),
+        Crockford => b32dec_generic::<Crockford>(src, dst),
+        Geohash => b32dec_generic::<Geohash>(src, dst),
+        Z => b32dec_generic::<Z>(src, dst),
+        _ => panic!("invalid alphabet selected"),
     }
 }
 
@@ -105,7 +103,7 @@ mod tests {
             let data: Vec<u8> = (0..data_len).map(|i| i as u8).collect();
             let encoded = encode(alphabet_crate, &data);
             let expected = decode(alphabet_crate, &encoded).unwrap();
-            let mut dst = vec![0u8; (expected.len() + 4) / 5 * 5];
+            let mut dst = vec![0u8; expected.len().div_ceil(5) * 5];
             let dst = b32dec(encoded.as_bytes(), &mut dst, alphabet_u8);
             assert_eq!(dst, expected, "failed for length: {}", data_len);
         }
@@ -120,7 +118,7 @@ mod tests {
             let data: Vec<u8> = (0..data_len).map(|i| i as u8).collect();
             let encoded = encode(alphabet_crate, &data);
             let expected = decode(alphabet_crate, &encoded).unwrap();
-            let mut dst = vec![0u8; (expected.len() + 4) / 5 * 5];
+            let mut dst = vec![0u8; expected.len().div_ceil(5) * 5];
             let dst = b32dec(encoded.as_bytes(), &mut dst, alphabet_u8);
             assert_eq!(dst, expected, "failed for length {}", data_len);
         }
@@ -135,7 +133,7 @@ mod tests {
             let data: Vec<u8> = (0..data_len).map(|i| i as u8).collect();
             let encoded = encode(alphabet_crate, &data);
             let expected = decode(alphabet_crate, &encoded).unwrap();
-            let mut dst = vec![0u8; (expected.len() + 4) / 5 * 5];
+            let mut dst = vec![0u8; expected.len().div_ceil(5) * 5];
             let dst = b32dec(encoded.as_bytes(), &mut dst, alphabet_u8);
             assert_eq!(dst, expected, "failed for length {}", data_len);
         }

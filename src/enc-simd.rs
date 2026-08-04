@@ -5,7 +5,7 @@ use std::simd::cmp::SimdPartialOrd;
 use crate::{Rfc4648, Rfc4648Hex, Crockford, Geohash, Z};
 use super::{CROCKFORD_LUT, GEOHASH_LUT, Z_LUT};
 
-pub(crate) unsafe fn to_char_simd<const A: u8>(src: Simd<u8, 64>) -> Simd<u8, 64> {
+pub(crate) fn to_char_simd<const A: u8>(src: Simd<u8, 64>) -> Simd<u8, 64> {
     match A {
         Rfc4648 => {
             let off_a = Simd::splat(b'A');
@@ -33,11 +33,11 @@ pub(crate) unsafe fn to_char_simd<const A: u8>(src: Simd<u8, 64>) -> Simd<u8, 64
             let lut_reg = Simd::from_slice(&Z_LUT);
             lut_reg.swizzle_dyn(src)
         }
-        _ => core::hint::unreachable_unchecked(),
+        _ => unsafe { core::hint::unreachable_unchecked() },
     }
 }
 
-pub(crate) unsafe fn b32enc_simd<'a, const A: u8>(src: &'a [u8], dst: &'a mut [u8]) -> &'a [u8] {
+pub(crate) fn b32enc_simd<'a, const A: u8>(src: &'a [u8], dst: &'a mut [u8]) -> &'a [u8] {
     const shuf: Simd<u8, 64> = Simd::from_array([
         4, 4, 4, 4, 3, 2, 1, 0,
         9, 9, 9, 9, 8, 7, 6, 5,
@@ -63,8 +63,8 @@ pub(crate) unsafe fn b32enc_simd<'a, const A: u8>(src: &'a [u8], dst: &'a mut [u
     let mut src_cur = 0;
     let mut dst_cur = 0;
     while src.len() - src_cur >= 40 {
-        let s = transmute::<_, *const Simd<u8, 64>>(src.as_ptr().add(src_cur)).read_unaligned();
-        let p = transmute::<_, Simd<u64, 8>>(s.swizzle_dyn(shuf));
+        let s = unsafe { transmute::<_, *const Simd<u8, 64>>(src.as_ptr().add(src_cur)).read_unaligned() };
+        let p = unsafe { transmute::<_, Simd<u64, 8>>(s.swizzle_dyn(shuf)) };
         let d = (p >> Simd::splat(3)) & Simd::splat(0x1F00000000000000)
             | (p >> Simd::splat(6)) & Simd::splat(0x001F000000000000)
             | (p >> Simd::splat(9)) & Simd::splat(0x00001F0000000000)
@@ -74,10 +74,10 @@ pub(crate) unsafe fn b32enc_simd<'a, const A: u8>(src: &'a [u8], dst: &'a mut [u
             | (p >> Simd::splat(21)) & Simd::splat(0x0000000000001F00)
             | (p >> Simd::splat(24)) & Simd::splat(0x000000000000001F);
 
-        let db = transmute::<_, Simd<u8, 64>>(d).swizzle_dyn(endian64);
+        let db = unsafe { transmute::<_, Simd<u8, 64>>(d).swizzle_dyn(endian64) };
         let res: Simd<u8, 64> = to_char_simd::<A>(db);
 
-        transmute::<_, *mut Simd<u8, 64>>(dst.as_ptr().add(dst_cur)).write_unaligned(res);
+        unsafe { transmute::<_, *mut Simd<u8, 64>>(dst.as_ptr().add(dst_cur)).write_unaligned(res) };
         src_cur += 40;
         dst_cur += 64;
     }
@@ -104,57 +104,47 @@ mod tests {
 
     #[test]
     fn test_rfc4648_simd() {
-        unsafe {
-            let src = Simd::<u8, 64>::from_slice(&TO_CHAR_INPUT);
-            let result_simd = to_char_simd::<Rfc4648>(src);
-            let mut actual = [0u8; 64];
-            result_simd.copy_to_slice(&mut actual);
-            assert_eq!(&actual[0..32], RFC4648_CHARS);
-        }
+        let src = Simd::<u8, 64>::from_slice(&TO_CHAR_INPUT);
+        let result_simd = to_char_simd::<Rfc4648>(src);
+        let mut actual = [0u8; 64];
+        result_simd.copy_to_slice(&mut actual);
+        assert_eq!(&actual[0..32], RFC4648_CHARS);
     }
 
     #[test]
     fn test_rfc4648hex_simd() {
-        unsafe {
-            let src = Simd::<u8, 64>::from_slice(&TO_CHAR_INPUT);
-            let result_simd = to_char_simd::<Rfc4648Hex>(src);
-            let mut actual = [0u8; 64];
-            result_simd.copy_to_slice(&mut actual);
-            assert_eq!(&actual[0..32], RFC4648HEX_CHARS);
-        }
+        let src = Simd::<u8, 64>::from_slice(&TO_CHAR_INPUT);
+        let result_simd = to_char_simd::<Rfc4648Hex>(src);
+        let mut actual = [0u8; 64];
+        result_simd.copy_to_slice(&mut actual);
+        assert_eq!(&actual[0..32], RFC4648HEX_CHARS);
     }
 
     #[test]
     fn test_crockford_simd() {
-        unsafe {
-            let src = Simd::<u8, 64>::from_slice(&TO_CHAR_INPUT);
-            let result_simd = to_char_simd::<Crockford>(src);
-            let mut actual = [0u8; 64];
-            result_simd.copy_to_slice(&mut actual);
-            assert_eq!(&actual[0..32], CROCKFORD_CHARS);
-        }
+        let src = Simd::<u8, 64>::from_slice(&TO_CHAR_INPUT);
+        let result_simd = to_char_simd::<Crockford>(src);
+        let mut actual = [0u8; 64];
+        result_simd.copy_to_slice(&mut actual);
+        assert_eq!(&actual[0..32], CROCKFORD_CHARS);
     }
 
     #[test]
     fn test_geohash_simd() {
-        unsafe {
-            let src = Simd::<u8, 64>::from_slice(&TO_CHAR_INPUT);
-            let result_simd = to_char_simd::<Geohash>(src);
-            let mut actual = [0u8; 64];
-            result_simd.copy_to_slice(&mut actual);
-            assert_eq!(&actual[0..32], GEOHASH_CHARS);
-        }
+        let src = Simd::<u8, 64>::from_slice(&TO_CHAR_INPUT);
+        let result_simd = to_char_simd::<Geohash>(src);
+        let mut actual = [0u8; 64];
+        result_simd.copy_to_slice(&mut actual);
+        assert_eq!(&actual[0..32], GEOHASH_CHARS);
     }
 
     #[test]
     fn test_z_simd() {
-        unsafe {
-            let src = Simd::<u8, 64>::from_slice(&TO_CHAR_INPUT);
-            let result = to_char_simd::<Z>(src);
-            let mut actual = [0u8; 64];
-            result.copy_to_slice(&mut actual);
-            assert_eq!(&actual[0..32], Z_CHARS);
-        }
+        let src = Simd::<u8, 64>::from_slice(&TO_CHAR_INPUT);
+        let result = to_char_simd::<Z>(src);
+        let mut actual = [0u8; 64];
+        result.copy_to_slice(&mut actual);
+        assert_eq!(&actual[0..32], Z_CHARS);
     }
 
     #[bench]
@@ -162,16 +152,16 @@ mod tests {
         let input = [0; 40];
         let mut output = [0u8; 64];
         b.iter(|| {
-            unsafe { black_box(b32enc_simd::<{Z}>(black_box(&input), black_box(&mut output))) };
+            black_box(b32enc_simd::<{Z}>(black_box(&input), black_box(&mut output)));
         });
     }
 
     #[bench]
     fn bench_b32enc_simd_bulk(b: &mut Bencher) {
-        let input = [0u8; 10485760];
-        let mut output = [0u8; 16777216];
+        let input = vec![0u8; 10485760];
+        let mut output = vec![0u8; 16777216];
         b.iter(|| {
-            unsafe { black_box(b32enc_simd::<Z>(black_box(&input), black_box(&mut output))) };
+            black_box(b32enc_simd::<Z>(black_box(&input), black_box(&mut output)));
         });
     }
 }

@@ -39,31 +39,29 @@ static Z_LUT: [u8; 64] = [
 ];
 
 #[inline(always)]
-pub(crate) unsafe fn to_char<const A: u8>(value: u8) -> u8 {
+pub(crate) fn to_char<const A: u8>(value: u8) -> u8 {
     match A {
         Rfc4648 => RFC4648_CHARS[value as usize],
         Rfc4648Hex => RFC4648HEX_CHARS[value as usize],
         Crockford => CROCKFORD_CHARS[value as usize],
         Geohash => GEOHASH_CHARS[value as usize],
         Z => Z_CHARS[value as usize],
-        _ => core::hint::unreachable_unchecked(),
+        _ => unsafe { core::hint::unreachable_unchecked() },
     }
 }
 
 pub fn b32enc(src: &[u8], dst: &mut [u8], alphabet: u8) {
-    if dst.len() < ((src.len() + 4) / 5) * 8 {
+    if dst.len() < src.len().div_ceil(5) * 8 {
         panic!("destination buffer too small");
     }
 
-    unsafe {
-        match alphabet {
-            Rfc4648 => b32enc_generic::<Rfc4648>(src, dst),
-            Rfc4648Hex => b32enc_generic::<Rfc4648Hex>(src, dst),
-            Crockford => b32enc_generic::<Crockford>(src, dst),
-            Geohash => b32enc_generic::<Geohash>(src, dst),
-            Z => b32enc_generic::<Z>(src, dst),
-            _ => panic!("invalid alphabet selected"),
-        }
+    match alphabet {
+        Rfc4648 => b32enc_generic::<Rfc4648>(src, dst),
+        Rfc4648Hex => b32enc_generic::<Rfc4648Hex>(src, dst),
+        Crockford => b32enc_generic::<Crockford>(src, dst),
+        Geohash => b32enc_generic::<Geohash>(src, dst),
+        Z => b32enc_generic::<Z>(src, dst),
+        _ => panic!("invalid alphabet selected"),
     }
 }
 
@@ -90,7 +88,7 @@ mod tests {
     use test::Bencher;
 
     fn encoded_len(input_len: usize) -> usize {
-        ((input_len + 4) / 5) * 8
+        input_len.div_ceil(5) * 8
     }
 
     #[test]

@@ -4,18 +4,19 @@ use std::simd::cmp::SimdPartialOrd;
 
 use crate::{Rfc4648, Rfc4648Hex, Crockford, Geohash, Z};
 
-pub(crate) unsafe fn from_char_simd<const A: u8>(src: Simd<u8, 64>) -> Simd<u8, 64> {
+#[inline]
+pub(crate) fn from_char_simd<const A: u8>(src: Simd<u8, 64>) -> Simd<u8, 64> {
     let lut = match A {
         Rfc4648 => &crate::dec::RFC4648_LUT,
         Rfc4648Hex => &crate::dec::RFC4648HEX_LUT,
         Crockford => &crate::dec::CROCKFORD_LUT,
         Geohash => &crate::dec::GEOHASH_LUT,
         Z => &crate::dec::Z_LUT,
-        _ => core::hint::unreachable_unchecked(),
+        _ => unsafe { core::hint::unreachable_unchecked() },
     };
 
-    let lut_0_63 = transmute::<_, *const Simd<u8, 64>>(lut.as_ptr().add(0)).read_unaligned();
-    let lut_64_127 = transmute::<_, *const Simd<u8, 64>>(lut.as_ptr().add(64)).read_unaligned();
+    let lut_0_63 = unsafe { transmute::<_, *const Simd<u8, 64>>(lut.as_ptr().add(0)).read_unaligned()};
+    let lut_64_127 = unsafe { transmute::<_, *const Simd<u8, 64>>(lut.as_ptr().add(64)).read_unaligned() };
     let mask_ge_64 = src.simd_ge(Simd::splat(64));
 
     let v_0_63 = lut_0_63.swizzle_dyn(src);
@@ -24,8 +25,7 @@ pub(crate) unsafe fn from_char_simd<const A: u8>(src: Simd<u8, 64>) -> Simd<u8, 
     mask_ge_64.select(v_64_127, v_0_63)
 }
 
-#[inline(never)]
-pub(crate) unsafe fn b32dec_simd<'a, const A: u8>(src: &'a [u8], dst: &'a mut [u8]) {
+pub(crate) fn b32dec_simd<'a, const A: u8>(src: &'a [u8], dst: &'a mut [u8]) {
     let mut src_cur = 0;
     let mut dst_cur = 0;
 
@@ -42,9 +42,10 @@ pub(crate) unsafe fn b32dec_simd<'a, const A: u8>(src: &'a [u8], dst: &'a mut [u
     ]);
 
     while src.len() - src_cur >= 64 {
+
         let s = Simd::<u8, 64>::from_slice(&src[src_cur..src_cur + 64]);
         let d = from_char_simd::<A>(s);
-        let g: Simd<u64, 8> = transmute(d);
+        let g: Simd<u64, 8> = unsafe { transmute(d) }; 
 
         let g0 = g & byte_mask;
         let g1 = (g >> 8) & byte_mask;
@@ -62,10 +63,12 @@ pub(crate) unsafe fn b32dec_simd<'a, const A: u8>(src: &'a [u8], dst: &'a mut [u
         let o4 = ((g6 << 5) | g7) & byte_mask;
 
         let out64 = o0 | (o1 << 8) | (o2 << 16) | (o3 << 24) | (o4 << 32);
-
-        let out_bytes: Simd<u8, 64> = transmute(out64);
-        let packed = out_bytes.swizzle_dyn(pack_idx);
-        core::ptr::copy_nonoverlapping(packed.as_array().as_ptr(), dst.as_mut_ptr().add(dst_cur), 40);
+        
+        unsafe {
+            let out_bytes: Simd<u8, 64> = transmute(out64);
+            let packed = out_bytes.swizzle_dyn(pack_idx);
+            core::ptr::copy_nonoverlapping(packed.as_array().as_ptr(), dst.as_mut_ptr().add(dst_cur), 40);
+        }
 
         src_cur += 64;
         dst_cur += 40;
@@ -117,67 +120,57 @@ mod tests {
 
     #[test]
     fn test_from_char_simd_rfc4648() {
-        unsafe {
-            let src_simd = Simd::<u8, 64>::from_slice(&FROM_CHAR_INPUT);
-            let result_simd = from_char_simd::<Rfc4648>(src_simd);
-            let mut actual_output_bytes = [0u8; 64];
-            result_simd.copy_to_slice(&mut actual_output_bytes);
+        let src_simd = Simd::<u8, 64>::from_slice(&FROM_CHAR_INPUT);
+        let result_simd = from_char_simd::<Rfc4648>(src_simd);
+        let mut actual_output_bytes = [0u8; 64];
+        result_simd.copy_to_slice(&mut actual_output_bytes);
 
-            let expected_output_bytes = generate_expected_from_char_output(&FROM_CHAR_INPUT, RFC4648_CHARS);
-            assert_eq!(&actual_output_bytes[..], &expected_output_bytes[..], "SIMD Rfc4648 from_char mismatch");
-        }
+        let expected_output_bytes = generate_expected_from_char_output(&FROM_CHAR_INPUT, RFC4648_CHARS);
+        assert_eq!(&actual_output_bytes[..], &expected_output_bytes[..], "SIMD Rfc4648 from_char mismatch");
     }
 
     #[test]
     fn test_from_char_simd_rfc4648hex() {
-        unsafe {
-            let src_simd = Simd::<u8, 64>::from_slice(&FROM_CHAR_INPUT);
-            let result_simd = from_char_simd::<Rfc4648Hex>(src_simd);
-            let mut actual_output_bytes = [0u8; 64];
-            result_simd.copy_to_slice(&mut actual_output_bytes);
+        let src_simd = Simd::<u8, 64>::from_slice(&FROM_CHAR_INPUT);
+        let result_simd = from_char_simd::<Rfc4648Hex>(src_simd);
+        let mut actual_output_bytes = [0u8; 64];
+        result_simd.copy_to_slice(&mut actual_output_bytes);
 
-            let expected_output_bytes = generate_expected_from_char_output(&FROM_CHAR_INPUT, RFC4648HEX_CHARS);
-            assert_eq!(&actual_output_bytes[..], &expected_output_bytes[..], "SIMD Rfc4648Hex from_char mismatch");
-        }
+        let expected_output_bytes = generate_expected_from_char_output(&FROM_CHAR_INPUT, RFC4648HEX_CHARS);
+        assert_eq!(&actual_output_bytes[..], &expected_output_bytes[..], "SIMD Rfc4648Hex from_char mismatch");
     }
 
     #[test]
     fn test_from_char_simd_crockford() {
-        unsafe {
-            let src_simd = Simd::<u8, 64>::from_slice(&FROM_CHAR_INPUT);
-            let result_simd = from_char_simd::<Crockford>(src_simd);
-            let mut actual_output_bytes = [0u8; 64];
-            result_simd.copy_to_slice(&mut actual_output_bytes);
+        let src_simd = Simd::<u8, 64>::from_slice(&FROM_CHAR_INPUT);
+        let result_simd = from_char_simd::<Crockford>(src_simd);
+        let mut actual_output_bytes = [0u8; 64];
+        result_simd.copy_to_slice(&mut actual_output_bytes);
 
-            let expected_output_bytes = generate_expected_from_char_output(&FROM_CHAR_INPUT, CROCKFORD_CHARS);
-            assert_eq!(&actual_output_bytes[..], &expected_output_bytes[..], "SIMD Crockford from_char mismatch");
-        }
+        let expected_output_bytes = generate_expected_from_char_output(&FROM_CHAR_INPUT, CROCKFORD_CHARS);
+        assert_eq!(&actual_output_bytes[..], &expected_output_bytes[..], "SIMD Crockford from_char mismatch");
     }
 
     #[test]
     fn test_from_char_simd_geohash() {
-        unsafe {
-            let src_simd = Simd::<u8, 64>::from_slice(&FROM_CHAR_INPUT);
-            let result_simd = from_char_simd::<Geohash>(src_simd);
-            let mut actual_output_bytes = [0u8; 64];
-            result_simd.copy_to_slice(&mut actual_output_bytes);
+        let src_simd = Simd::<u8, 64>::from_slice(&FROM_CHAR_INPUT);
+        let result_simd = from_char_simd::<Geohash>(src_simd);
+        let mut actual_output_bytes = [0u8; 64];
+        result_simd.copy_to_slice(&mut actual_output_bytes);
 
-            let expected_output_bytes = generate_expected_from_char_output(&FROM_CHAR_INPUT, GEOHASH_CHARS);
-            assert_eq!(&actual_output_bytes[..], &expected_output_bytes[..], "SIMD Geohash from_char mismatch");
-        }
+        let expected_output_bytes = generate_expected_from_char_output(&FROM_CHAR_INPUT, GEOHASH_CHARS);
+        assert_eq!(&actual_output_bytes[..], &expected_output_bytes[..], "SIMD Geohash from_char mismatch");
     }
 
     #[test]
     fn test_from_char_simd_z() {
-        unsafe {
-            let src_simd = Simd::<u8, 64>::from_slice(&FROM_CHAR_INPUT);
-            let result_simd = from_char_simd::<Z>(src_simd);
-            let mut actual_output_bytes = [0u8; 64];
-            result_simd.copy_to_slice(&mut actual_output_bytes);
+        let src_simd = Simd::<u8, 64>::from_slice(&FROM_CHAR_INPUT);
+        let result_simd = from_char_simd::<Z>(src_simd);
+        let mut actual_output_bytes = [0u8; 64];
+        result_simd.copy_to_slice(&mut actual_output_bytes);
 
-            let expected_output_bytes = generate_expected_from_char_output(&FROM_CHAR_INPUT, Z_CHARS);
-            assert_eq!(&actual_output_bytes[..], &expected_output_bytes[..], "SIMD Z from_char mismatch");
-        }
+        let expected_output_bytes = generate_expected_from_char_output(&FROM_CHAR_INPUT, Z_CHARS);
+        assert_eq!(&actual_output_bytes[..], &expected_output_bytes[..], "SIMD Z from_char mismatch");
     }
 
     #[test]
@@ -185,9 +178,7 @@ mod tests {
         let input = b"ORSXG5DJORUXG5LNORUWYZLSEBFWC2LTN5ZG64DDMNWGC2LPN5ZG64TON5XHIZLE";
         let expected = decode(Alphabet::Rfc4648 { padding: true }, core::str::from_utf8(input).unwrap()).unwrap();
         let mut output = [0u8; 40];
-        unsafe {
-            b32dec_simd::<{Rfc4648}>(input, &mut output);
-        }
+        b32dec_simd::<{Rfc4648}>(input, &mut output);
         assert_eq!(&output[..expected.len()], &expected);
     }
 
@@ -210,12 +201,10 @@ mod tests {
 
     #[bench]
     fn bench_from_char_simd(b: &mut Bencher) {
-        unsafe {
-            let src_simd = Simd::<u8, 64>::from_slice(&FROM_CHAR_INPUT);
-            b.iter(|| {
-                black_box(from_char_simd::<Z>(black_box(src_simd)));
-            });
-        }
+        let src_simd = Simd::<u8, 64>::from_slice(&FROM_CHAR_INPUT);
+        b.iter(|| {
+            black_box(from_char_simd::<Z>(black_box(src_simd)));
+        });
     }
 
     #[bench]
@@ -223,7 +212,7 @@ mod tests {
         let input = b"GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
         let mut output = [0u8; 40];
         b.iter(|| {
-            unsafe { black_box(b32dec_simd::<Z>(black_box(input), black_box(&mut output))) };
+            black_box(b32dec_simd::<Z>(black_box(input), black_box(&mut output)));
         });
     }
 
@@ -235,7 +224,7 @@ mod tests {
             *b = b"GEZDGNBVGY3TQOJQ"[i % 16];
         }
         b.iter(|| {
-            unsafe { black_box(b32dec_simd::<Z>(black_box(&input), black_box(&mut output))) };
+            black_box(b32dec_simd::<Z>(black_box(&input), black_box(&mut output)));
         });
     }
 }

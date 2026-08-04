@@ -3,7 +3,7 @@ use super::enc_avx512::b32enc_avx512;
 #[cfg(all(feature = "simd", not(feature = "avx-512")))]
 use super::enc_simd::b32enc_simd;
 
-pub(crate) unsafe fn b32enc_generic<const A: u8>(src: &[u8], dst: &mut [u8]) {
+pub(crate) fn b32enc_generic<const A: u8>(src: &[u8], dst: &mut [u8]) {
     #[cfg(any(feature = "avx-512", feature = "simd"))]
     let simd_src_len = (src.len() / 40) * 40;
     #[cfg(any(feature = "avx-512", feature = "simd"))]
@@ -14,12 +14,10 @@ pub(crate) unsafe fn b32enc_generic<const A: u8>(src: &[u8], dst: &mut [u8]) {
     let simd_dst_len = 0;
     #[cfg(any(feature = "avx-512", feature = "simd"))]
     if simd_src_len > 0 {
-        #[cfg(feature = "avx-512")] {
-            b32enc_avx512::<A>(&src[..simd_src_len], &mut dst[..simd_dst_len]);
-        }
-        #[cfg(all(feature = "simd", not(feature = "avx-512")))] {
-            b32enc_simd::<A>(&src[..simd_src_len], &mut dst[..simd_dst_len]);
-        }
+        #[cfg(feature = "avx-512")]
+        b32enc_avx512::<A>(&src[..simd_src_len], &mut dst[..simd_dst_len]);
+        #[cfg(all(feature = "simd", not(feature = "avx-512")))]
+        b32enc_simd::<A>(&src[..simd_src_len], &mut dst[..simd_dst_len]);
     }
 
     let rem_src = &src[simd_src_len..];
@@ -39,7 +37,7 @@ pub(crate) unsafe fn b32enc_generic<const A: u8>(src: &[u8], dst: &mut [u8]) {
         dst_chunk[6] = super::to_char::<A>(((padded_chunk[3] & 0x03) << 3) | ((padded_chunk[4] & 0xE0) >> 5));
         dst_chunk[7] = super::to_char::<A>(padded_chunk[4] & 0x1F);
 
-        let dst_len = (src_chunk.len() * 8 + 4) / 5;
+        let dst_len = (src_chunk.len() * 8).div_ceil(5);
         for i in dst_len..8 {
             dst_chunk[i] = b'=';
         }
@@ -60,69 +58,57 @@ mod tests {
 
     #[test]
     fn test_to_char_scalar_rfc4648() {
-        unsafe {
-            for value in 0..32u8 {
-                let expected = RFC4648_CHARS[value as usize];
-                let actual = super::super::to_char::<{Rfc4648}>(value);
-                assert_eq!(actual, expected, "Rfc4648 mismatch for value {}", value);
-            }
+        for value in 0..32u8 {
+            let expected = RFC4648_CHARS[value as usize];
+            let actual = super::super::to_char::<{Rfc4648}>(value);
+            assert_eq!(actual, expected, "Rfc4648 mismatch for value {}", value);
         }
     }
 
     #[test]
     fn test_to_char_scalar_rfc4648hex() {
-        unsafe {
-            for value in 0..32u8 {
-                let expected = RFC4648HEX_CHARS[value as usize];
-                let actual = super::super::to_char::<{Rfc4648Hex}>(value);
-                assert_eq!(actual, expected, "Rfc4648Hex mismatch for value {}", value);
-            }
+        for value in 0..32u8 {
+            let expected = RFC4648HEX_CHARS[value as usize];
+            let actual = super::super::to_char::<{Rfc4648Hex}>(value);
+            assert_eq!(actual, expected, "Rfc4648Hex mismatch for value {}", value);
         }
     }
 
     #[test]
     fn test_to_char_scalar_crockford() {
-        unsafe {
-            for value in 0..32u8 {
-                let expected = CROCKFORD_CHARS[value as usize];
-                let actual = super::super::to_char::<{Crockford}>(value);
-                assert_eq!(actual, expected, "Crockford mismatch for value {}", value);
-            }
+        for value in 0..32u8 {
+            let expected = CROCKFORD_CHARS[value as usize];
+            let actual = super::super::to_char::<{Crockford}>(value);
+            assert_eq!(actual, expected, "Crockford mismatch for value {}", value);
         }
     }
 
     #[test]
     fn test_to_char_scalar_geohash() {
-        unsafe {
-            for value in 0..32u8 {
-                let expected = GEOHASH_CHARS[value as usize];
-                let actual = super::super::to_char::<{Geohash}>(value);
-                assert_eq!(actual, expected, "Geohash mismatch for value {}", value);
-            }
+        for value in 0..32u8 {
+            let expected = GEOHASH_CHARS[value as usize];
+            let actual = super::super::to_char::<{Geohash}>(value);
+            assert_eq!(actual, expected, "Geohash mismatch for value {}", value);
         }
     }
 
     #[test]
     fn test_to_char_scalar_z() {
-        unsafe {
-            for value in 0..32u8 {
-                let expected = Z_CHARS[value as usize];
-                let actual = super::super::to_char::<{Z}>(value);
-                assert_eq!(actual, expected, "Z mismatch for value {}", value);
-            }
+        for value in 0..32u8 {
+            let expected = Z_CHARS[value as usize];
+            let actual = super::super::to_char::<{Z}>(value);
+            assert_eq!(actual, expected, "Z mismatch for value {}", value);
         }
     }
 
     #[bench]
     fn bench_to_char(b: &mut Bencher) {
         let input: Vec<u8> = (0..32).chain(0..32).collect();
-        unsafe {
-            b.iter(|| {
-                for src in input.iter() {
-                    black_box(super::super::to_char::<{Z}>(black_box(*src)));
-                }
-            });
-        }
+        b.iter(|| {
+            for src in input.iter() {
+                black_box(super::super::to_char::<{Z}>(black_box(*src)));
+            }
+        });
     }
 
     #[bench]
@@ -130,16 +116,16 @@ mod tests {
         let input = [0; 35];
         let mut output = [0u8; 56];
         b.iter(|| {
-            unsafe { black_box(b32enc_generic::<{Z}>(black_box(&input), black_box(&mut output))) };
+            b32enc_generic::<{Z}>(black_box(&input), black_box(&mut output));
         });
     }
 
     #[bench]
     fn bench_b32enc_bulk(b: &mut Bencher) {
-        let input = [0u8; 10485760];
-        let mut output = [0u8; 16777216];
+        let input = vec![0u8; 10485760];
+        let mut output = vec![0u8; 16777216];
         b.iter(|| {
-            unsafe { black_box(b32enc_generic::<Z>(black_box(&input), black_box(&mut output))) };
+            b32enc_generic::<Z>(black_box(&input), black_box(&mut output));
         });
     }
 }

@@ -3,7 +3,7 @@ use super::dec_avx512::{padcount_avx512, b32dec_avx512};
 #[cfg(all(feature = "simd", not(feature = "avx-512")))]
 use super::dec_simd::b32dec_simd;
 
-pub(crate) unsafe fn b32dec_generic<'a, const A: u8>(src: &'a [u8], dst: &'a mut [u8]) -> &'a [u8] {
+pub(crate) fn b32dec_generic<'a, const A: u8>(src: &'a [u8], dst: &'a mut [u8]) -> &'a [u8] {
     #[cfg(any(feature = "avx-512", feature = "simd"))]
     if src.len() >= 64 {
         #[cfg(feature = "avx-512")]
@@ -22,7 +22,7 @@ pub(crate) unsafe fn b32dec_generic<'a, const A: u8>(src: &'a [u8], dst: &'a mut
     #[cfg(not(any(feature = "avx-512", feature = "simd")))]
     let dst_tail = 0;
 
-    let pad_count = if src.len() % 8 == 0 {
+    let pad_count = if src.len().is_multiple_of(8) {
         #[cfg(feature = "avx-512")] {
             padcount_avx512(&src[src.len() - 8..])
         }
@@ -54,7 +54,7 @@ pub(crate) unsafe fn b32dec_generic<'a, const A: u8>(src: &'a [u8], dst: &'a mut
         dst_chunk[4] = (data6 << 5) | data7;
     }
 
-    return &dst[..dst.len() - 5 + (8 - pad_count) * 5 / 8]
+    &dst[..dst.len() - 5 + (8 - pad_count) * 5 / 8]
 }
 
 #[inline(always)]
@@ -102,10 +102,8 @@ mod tests {
     fn test_from_char_scalar_rfc4648() {
         for value in 0..=255u8 {
             let expected = expected_from_char(value, RFC4648_CHARS);
-            unsafe {
-                let actual = super::super::from_char::<Rfc4648>(value);
-                assert_eq!(actual, expected, "Rfc4648 from_char mismatch for value {} ({})", value, value as char);
-            }
+            let actual = super::super::from_char::<Rfc4648>(value);
+            assert_eq!(actual, expected, "Rfc4648 from_char mismatch for value {} ({})", value, value as char);
         }
     }
 
@@ -113,10 +111,8 @@ mod tests {
     fn test_from_char_scalar_rfc4648hex() {
         for value in 0..=255u8 {
             let expected = expected_from_char(value, RFC4648HEX_CHARS);
-            unsafe {
-                let actual = super::super::from_char::<Rfc4648Hex>(value);
-                assert_eq!(actual, expected, "Rfc4648Hex from_char mismatch for value {} ({})", value, value as char);
-            }
+            let actual = super::super::from_char::<Rfc4648Hex>(value);
+            assert_eq!(actual, expected, "Rfc4648Hex from_char mismatch for value {} ({})", value, value as char);
         }
     }
 
@@ -124,10 +120,8 @@ mod tests {
     fn test_from_char_scalar_crockford() {
         for value in 0..=255u8 {
             let expected = expected_from_char(value, CROCKFORD_CHARS);
-            unsafe {
-                let actual = super::super::from_char::<Crockford>(value);
-                assert_eq!(actual, expected, "Crockford from_char mismatch for value {} ({})", value, value as char);
-            }
+            let actual = super::super::from_char::<Crockford>(value);
+            assert_eq!(actual, expected, "Crockford from_char mismatch for value {} ({})", value, value as char);
         }
     }
 
@@ -135,10 +129,8 @@ mod tests {
     fn test_from_char_scalar_geohash() {
         for value in 0..=255u8 {
             let expected = expected_from_char(value, GEOHASH_CHARS);
-            unsafe {
-                let actual = super::super::from_char::<Geohash>(value);
-                assert_eq!(actual, expected, "Geohash from_char mismatch for value {} ({})", value, value as char);
-            }
+            let actual = super::super::from_char::<Geohash>(value);
+            assert_eq!(actual, expected, "Geohash from_char mismatch for value {} ({})", value, value as char);
         }
     }
 
@@ -146,10 +138,8 @@ mod tests {
     fn test_from_char_scalar_z() {
         for value in 0..=255u8 {
             let expected = expected_from_char(value, Z_CHARS);
-            unsafe {
-                let actual = super::super::from_char::<Z>(value);
-                assert_eq!(actual, expected, "Z from_char mismatch for value {} ({})", value, value as char);
-            }
+            let actual = super::super::from_char::<Z>(value);
+            assert_eq!(actual, expected, "Z from_char mismatch for value {} ({})", value, value as char);
         }
     }
 
@@ -189,13 +179,11 @@ mod tests {
             b'a', b'b', b'c', b'd', b'e', b'f', b'g', b'h', b'i', b'j', b'k', b'l', b'm', b'n', b'o', b'p', b'q', b'r', b's', b't', b'u', b'v', b'w', b'x', b'y', b'z',
             0, u8::MAX,
         ];
-        unsafe {
-            b.iter(|| {
-                for src in FROM_CHAR_INPUT.iter() {
-                    black_box(super::super::from_char::<{Z}>(black_box(*src)));
-                }
-            });
-        }
+        b.iter(|| {
+            for src in FROM_CHAR_INPUT.iter() {
+                black_box(super::super::from_char::<{Z}>(black_box(*src)));
+            }
+        });
     }
 
     static PADCOUNT_INPUT: [[u8; 8]; 9] = [
@@ -224,7 +212,7 @@ mod tests {
         let input = b"GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBV";
         let mut output = [0u8; 35];
         b.iter(|| {
-            unsafe { black_box(b32dec_generic::<{Z}>(black_box(input), black_box(&mut output))) };
+            black_box(b32dec_generic::<{Z}>(black_box(input), black_box(&mut output)));
         });
     }
 
@@ -237,7 +225,7 @@ mod tests {
         }
 
         b.iter(|| {
-            unsafe { black_box(b32dec_generic::<Z>(black_box(&input), black_box(&mut output))) };
+            black_box(b32dec_generic::<Z>(black_box(&input), black_box(&mut output)));
         });
     }
 }
