@@ -218,11 +218,8 @@ mod tests {
 
     #[bench]
     fn bench_b32dec_simd_bulk(b: &mut Bencher) {
-        let mut input = vec![0u8; 16777216];
+        let input = vec![b'A'; 16777216];
         let mut output = vec![0u8; 10485760];
-        for (i, b) in input.iter_mut().enumerate() {
-            *b = b"GEZDGNBVGY3TQOJQ"[i % 16];
-        }
         b.iter(|| {
             black_box(b32dec_simd::<Z>(black_box(&input), black_box(&mut output)));
         });

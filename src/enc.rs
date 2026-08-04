@@ -240,4 +240,12 @@ mod tests {
             black_box(encode(Alphabet::Rfc4648 { padding: true }, black_box(&input)));
         });
     }
+
+    #[bench]
+    fn bench_base32_encode_bulk(b: &mut Bencher) {
+        let input = vec![0u8; 10485760];
+        b.iter(|| {
+            black_box(encode(Alphabet::Rfc4648 { padding: true }, black_box(&input)));
+        });
+    }
 }

@@ -284,4 +284,12 @@ mod tests {
             black_box(decode(Alphabet::Rfc4648 { padding: true }, black_box(input)).unwrap());
         });
     }
+
+    #[bench]
+    fn bench_base32_decode_bulk(b: &mut Bencher) {
+        let input = String::from_utf8(vec![b'A'; 16777216]).unwrap();
+        b.iter(|| {
+            black_box(decode(Alphabet::Rfc4648 { padding: true }, black_box(&input)).unwrap());
+        });
+    }
 }
